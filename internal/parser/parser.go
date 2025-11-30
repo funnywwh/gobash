@@ -256,8 +256,18 @@ func (p *Parser) parseIfStatement() *IfStatement {
 
 	p.nextToken() // 跳过 if
 
+	// 解析条件（跳过可能的分号）
+	if p.curToken.Type == lexer.SEMICOLON {
+		p.nextToken()
+	}
+	
 	// 解析条件
 	stmt.Condition = p.parseCommandStatement()
+	
+	// 如果条件后面有分号，跳过它
+	if p.curToken.Type == lexer.SEMICOLON {
+		p.nextToken()
+	}
 
 	if p.peekToken.Type == lexer.THEN {
 		p.nextToken() // 跳过 then
