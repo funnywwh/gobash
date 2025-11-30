@@ -111,18 +111,39 @@ func (s *Shell) ExecuteScript(scriptPath string) error {
 // ExecuteReader 从Reader执行命令
 func (s *Shell) ExecuteReader(reader io.Reader) error {
 	scanner := bufio.NewScanner(reader)
-	var script strings.Builder
+	firstLine := true
 
 	for scanner.Scan() {
-		script.WriteString(scanner.Text())
-		script.WriteString("\n")
+		line := strings.TrimSpace(scanner.Text())
+		
+		// 跳过空行
+		if line == "" {
+			continue
+		}
+		
+		// 跳过shebang行（#!/bin/bash, #!/usr/bin/env bash等）
+		if firstLine && strings.HasPrefix(line, "#!") {
+			firstLine = false
+			continue
+		}
+		firstLine = false
+		
+		// 跳过注释行（以#开头，但不是shebang）
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		
+		// 执行每一行
+		if err := s.executeLine(scanner.Text()); err != nil {
+			return err
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		return err
 	}
 
-	return s.executeLine(script.String())
+	return nil
 }
 
 // executeLine 执行一行命令

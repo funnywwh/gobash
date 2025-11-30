@@ -123,8 +123,18 @@ func (l *Lexer) NextToken() Token {
 		tok = newToken(NEWLINE, l.ch, tok.Line, tok.Column)
 	default:
 		if isLetter(l.ch) || l.ch == '_' {
-			tok.Literal = l.readIdentifier()
-			tok.Type = LookupIdent(tok.Literal)
+			// 先尝试读取标识符，但检查是否包含点号（文件名）
+			ident := l.readIdentifier()
+			// 如果下一个字符是点号，继续读取（可能是文件名）
+			if l.ch == '.' {
+				tok.Literal = ident + l.readIdentifierOrPath()
+				tok.Type = IDENTIFIER
+				tok.Line = l.line
+				tok.Column = l.column
+				return tok
+			}
+			tok.Literal = ident
+			tok.Type = LookupIdent(ident)
 			tok.Line = l.line
 			tok.Column = l.column
 			return tok
@@ -135,7 +145,7 @@ func (l *Lexer) NextToken() Token {
 			tok.Column = l.column
 			return tok
 		} else {
-			// 其他字符作为标识符的一部分（如路径中的/）
+			// 其他字符作为标识符的一部分（如路径中的/或.）
 			if l.ch != 0 {
 				tok.Literal = l.readIdentifierOrPath()
 				tok.Type = IDENTIFIER
@@ -170,13 +180,14 @@ func (l *Lexer) readIdentifier() string {
 	return l.input[position:l.position]
 }
 
-// readIdentifierOrPath 读取标识符或路径（包含特殊字符）
+// readIdentifierOrPath 读取标识符或路径（包含特殊字符如点号、斜杠）
 func (l *Lexer) readIdentifierOrPath() string {
 	position := l.position
 	for l.ch != 0 && 
 		l.ch != ' ' && 
 		l.ch != '\t' && 
 		l.ch != '\n' &&
+		l.ch != '\r' &&
 		l.ch != '|' &&
 		l.ch != '>' &&
 		l.ch != '<' &&
