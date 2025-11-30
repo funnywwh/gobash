@@ -134,9 +134,21 @@ func (l *Lexer) NextToken() Token {
 	case '}':
 		tok = newToken(RBRACE, l.ch, tok.Line, tok.Column)
 	case '[':
-		tok = newToken(LBRACKET, l.ch, tok.Line, tok.Column)
+		if l.peekChar() == '[' {
+			ch := l.ch
+			l.readChar()
+			tok = Token{Type: DBL_LBRACKET, Literal: string(ch) + string(l.ch), Line: tok.Line, Column: tok.Column}
+		} else {
+			tok = newToken(LBRACKET, l.ch, tok.Line, tok.Column)
+		}
 	case ']':
-		tok = newToken(RBRACKET, l.ch, tok.Line, tok.Column)
+		if l.peekChar() == ']' {
+			ch := l.ch
+			l.readChar()
+			tok = Token{Type: DBL_RBRACKET, Literal: string(ch) + string(l.ch), Line: tok.Line, Column: tok.Column}
+		} else {
+			tok = newToken(RBRACKET, l.ch, tok.Line, tok.Column)
+		}
 	case '=':
 		// = 字符应该已经在标识符读取时处理了（数组赋值 arr=(...)）
 		// 如果单独出现，作为非法字符

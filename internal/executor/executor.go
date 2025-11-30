@@ -73,6 +73,9 @@ func (e *Executor) Execute(program *parser.Program) error {
 
 // executeStatement 执行语句
 func (e *Executor) executeStatement(stmt parser.Statement) error {
+	if stmt == nil {
+		return nil // 空语句，直接返回
+	}
 	switch s := stmt.(type) {
 	case *parser.CommandStatement:
 		return e.executeCommand(s)
@@ -90,6 +93,8 @@ func (e *Executor) executeStatement(stmt parser.Statement) error {
 		return e.executeBlock(s)
 	case *parser.ArrayAssignmentStatement:
 		return e.executeArrayAssignment(s)
+	case *parser.CaseStatement:
+		return e.executeCaseStatement(s)
 	default:
 		return fmt.Errorf("unknown statement type: %T", stmt)
 	}
@@ -97,8 +102,8 @@ func (e *Executor) executeStatement(stmt parser.Statement) error {
 
 // executeCommand 执行命令
 func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
-	if cmd.Command == nil {
-		return fmt.Errorf("命令为空")
+	if cmd == nil || cmd.Command == nil {
+		return nil // 空命令，直接返回
 	}
 
 	// 获取命令名
@@ -112,6 +117,63 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 		return e.executeAssocArrayAssignment(cmdName, cmd.Args)
 	}
 
+	// 检查是否为内置命令或特殊命令（[ 或 [[）
+	if cmdName == "[" || cmdName == "[[" {
+		// 处理 [ 或 [[ 命令（test命令）
+		args := make([]string, len(cmd.Args))
+		for i, arg := range cmd.Args {
+			argValue := e.evaluateExpression(arg)
+			// 检查未定义的变量（set -u）
+			if strings.HasPrefix(argValue, "__UNDEFINED_VAR__") {
+				varName := strings.TrimPrefix(argValue, "__UNDEFINED_VAR__")
+				return fmt.Errorf("未定义的变量: %s", varName)
+			}
+			args[i] = argValue
+		}
+		
+		// 移除结束括号（] 或 ]]）
+		if len(args) > 0 {
+			lastArg := args[len(args)-1]
+			if lastArg == "]" || lastArg == "]]" {
+				args = args[:len(args)-1]
+			}
+		}
+		
+		// 对于 [[ 命令，需要支持 && 和 || 运算符
+		if cmdName == "[[" {
+			result, err := e.evaluateDoubleBracketExpression(args)
+			if err != nil {
+				if e.options["e"] {
+					os.Exit(1)
+				}
+				return err
+			}
+			if !result {
+				if e.options["e"] {
+					os.Exit(1)
+				}
+				return fmt.Errorf("test failed")
+			}
+			return nil
+		}
+		
+		// 对于 [ 命令，调用test命令
+		testFunc := e.builtins["test"]
+		if testFunc == nil {
+			return fmt.Errorf("test命令未找到")
+		}
+		
+		if err := testFunc(args, e.env); err != nil {
+			// 如果设置了 -e 选项且命令失败，立即退出
+			if e.options["e"] {
+				os.Exit(1)
+			}
+			return err
+		}
+		
+		return nil
+	}
+	
 	// 检查是否为内置命令
 	if builtinFunc, ok := e.builtins[cmdName]; ok {
 		args := make([]string, len(cmd.Args))
@@ -553,6 +615,74 @@ func (e *Executor) executeArrayAssignment(stmt *parser.ArrayAssignmentStatement)
 		e.env[stmt.Name] = values[0]
 	}
 	return nil
+}
+
+// executeCaseStatement 执行case语句
+func (e *Executor) executeCaseStatement(stmt *parser.CaseStatement) error {
+	// 求值case的值
+	value := e.evaluateExpression(stmt.Value)
+	
+	// 遍历所有case子句
+	for _, caseClause := range stmt.Cases {
+		// 检查是否匹配
+		matched := false
+		for _, pattern := range caseClause.Patterns {
+			// 简单的字符串匹配（支持通配符 * 和 ?）
+			if matchPattern(value, pattern) {
+				matched = true
+				break
+			}
+		}
+		
+		if matched {
+			// 执行匹配的case体
+			return e.executeBlock(caseClause.Body)
+		}
+	}
+	
+	// 没有匹配的case，不执行任何操作
+	return nil
+}
+
+// matchPattern 简单的模式匹配（支持 * 和 ? 通配符）
+func matchPattern(value, pattern string) bool {
+	// 如果模式是 *，匹配所有
+	if pattern == "*" {
+		return true
+	}
+	
+	// 简单的通配符匹配
+	patternIdx := 0
+	valueIdx := 0
+	
+	for patternIdx < len(pattern) && valueIdx < len(value) {
+		if pattern[patternIdx] == '*' {
+			// * 匹配任意字符序列
+			if patternIdx == len(pattern)-1 {
+				return true // * 在末尾，匹配剩余所有
+			}
+			// 递归匹配
+			for valueIdx <= len(value) {
+				if matchPattern(value[valueIdx:], pattern[patternIdx+1:]) {
+					return true
+				}
+				valueIdx++
+			}
+			return false
+		} else if pattern[patternIdx] == '?' {
+			// ? 匹配单个字符
+			patternIdx++
+			valueIdx++
+		} else if pattern[patternIdx] == value[valueIdx] {
+			patternIdx++
+			valueIdx++
+		} else {
+			return false
+		}
+	}
+	
+	// 如果都匹配完了，返回true
+	return patternIdx == len(pattern) && valueIdx == len(value)
 }
 
 // getArrayElement 获取数组元素
@@ -1191,6 +1321,137 @@ func parseFactor(expr string, pos *int) (int64, error) {
 // isDigitArith 判断是否为数字（用于算术表达式）
 func isDigitArith(ch byte) bool {
 	return ch >= '0' && ch <= '9'
+}
+
+// evaluateDoubleBracketExpression 计算 [[ 表达式（支持 && 和 ||）
+func (e *Executor) evaluateDoubleBracketExpression(args []string) (bool, error) {
+	if len(args) == 0 {
+		return false, fmt.Errorf("[[: 缺少参数")
+	}
+	
+	// 移除结束括号 ]]
+	if len(args) > 0 && args[len(args)-1] == "]]" {
+		args = args[:len(args)-1]
+	}
+	
+	// 使用递归下降解析器处理 && 和 ||
+	return e.parseDoubleBracketExpression(args, 0)
+}
+
+// parseDoubleBracketExpression 解析 [[ 表达式（处理 || 运算符，优先级最低）
+func (e *Executor) parseDoubleBracketExpression(args []string, pos int) (bool, error) {
+	left, newPos, err := e.parseDoubleBracketAndExpression(args, pos)
+	if err != nil {
+		return false, err
+	}
+	pos = newPos
+	
+	for pos < len(args) && args[pos] == "||" {
+		pos++ // 跳过 ||
+		right, newPos, err := e.parseDoubleBracketAndExpression(args, pos)
+		if err != nil {
+			return false, err
+		}
+		pos = newPos
+		left = left || right
+	}
+	
+	return left, nil
+}
+
+// parseDoubleBracketAndExpression 解析 && 表达式（优先级高于 ||）
+func (e *Executor) parseDoubleBracketAndExpression(args []string, pos int) (bool, int, error) {
+	left, newPos, err := e.parseDoubleBracketPrimaryExpression(args, pos)
+	if err != nil {
+		return false, pos, err
+	}
+	pos = newPos
+	
+	for pos < len(args) && args[pos] == "&&" {
+		pos++ // 跳过 &&
+		right, newPos, err := e.parseDoubleBracketPrimaryExpression(args, pos)
+		if err != nil {
+			return false, pos, err
+		}
+		pos = newPos
+		left = left && right
+	}
+	
+	return left, pos, nil
+}
+
+// parseDoubleBracketPrimaryExpression 解析基本表达式（单个测试或括号表达式）
+func (e *Executor) parseDoubleBracketPrimaryExpression(args []string, pos int) (bool, int, error) {
+	if pos >= len(args) {
+		return false, pos, fmt.Errorf("[[: 表达式不完整")
+	}
+	
+	// 处理括号表达式
+	if args[pos] == "(" {
+		pos++
+		// 找到匹配的右括号
+		depth := 1
+		endPos := pos
+		for endPos < len(args) && depth > 0 {
+			if args[endPos] == "(" {
+				depth++
+			} else if args[endPos] == ")" {
+				depth--
+			}
+			if depth > 0 {
+				endPos++
+			}
+		}
+		if depth != 0 {
+			return false, pos, fmt.Errorf("[[: 括号不匹配")
+		}
+		
+		// 递归解析括号内的表达式
+		result, err := e.parseDoubleBracketExpression(args[pos:endPos], 0)
+		if err != nil {
+			return false, pos, err
+		}
+		return result, endPos + 1, nil
+	}
+	
+	// 处理 ! 运算符
+	if args[pos] == "!" {
+		pos++
+		result, newPos, err := e.parseDoubleBracketPrimaryExpression(args, pos)
+		if err != nil {
+			return false, pos, err
+		}
+		return !result, newPos, nil
+	}
+	
+	// 处理单个测试表达式
+	// 找到测试表达式的结束位置（遇到 &&, ||, ), 或到达末尾）
+	endPos := pos
+	for endPos < len(args) {
+		if args[endPos] == "&&" || args[endPos] == "||" || args[endPos] == ")" {
+			break
+		}
+		endPos++
+	}
+	
+	// 提取测试表达式
+	testArgs := args[pos:endPos]
+	if len(testArgs) == 0 {
+		return false, pos, fmt.Errorf("[[: 空表达式")
+	}
+	
+	// 调用 test 命令来求值
+	testFunc := e.builtins["test"]
+	if testFunc == nil {
+		return false, pos, fmt.Errorf("test命令未找到")
+	}
+	
+	// 临时修改环境变量，调用 test 命令
+	// 注意：test 命令返回 error 表示失败，nil 表示成功
+	err := testFunc(testArgs, e.env)
+	result := err == nil
+	
+	return result, endPos, nil
 }
 
 // splitEnv 分割环境变量字符串

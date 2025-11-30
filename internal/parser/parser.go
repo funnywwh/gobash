@@ -54,7 +54,11 @@ func (p *Parser) ParseProgram() *Program {
 		if stmt != nil {
 			program.Statements = append(program.Statements, stmt)
 		}
-		p.nextToken()
+		// case语句已经处理了esac，curToken已经指向esac之后的位置
+		// 如果curToken不是EOF，需要移动到下一个token
+		if p.curToken.Type != lexer.EOF {
+			p.nextToken()
+		}
 	}
 
 	return program
@@ -71,6 +75,8 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseWhileStatement()
 	case lexer.FUNCTION:
 		return p.parseFunctionStatement()
+	case lexer.CASE:
+		return p.parseCaseStatement()
 		default:
 		// 检查是否是数组赋值 arr=(1 2 3)
 		// 注意：lexer可能将 arr= 识别为一个IDENTIFIER，所以需要检查是否以 = 结尾
@@ -160,28 +166,59 @@ func (p *Parser) parseStatement() Statement {
 func (p *Parser) parseCommandStatement() *CommandStatement {
 	stmt := &CommandStatement{}
 
-	// 解析命令（包括 [ 命令）
-	if p.curToken.Type == lexer.IDENTIFIER || 
-	   p.curToken.Type == lexer.STRING ||
-	   p.curToken.Type == lexer.STRING_SINGLE ||
-	   p.curToken.Type == lexer.STRING_DOUBLE ||
-	   p.curToken.Type == lexer.LBRACKET {
-		if p.curToken.Type == lexer.LBRACKET {
-			// [ 命令，创建一个标识符表达式
-			stmt.Command = &Identifier{Value: "["}
-		} else {
-			stmt.Command = p.parseExpression()
-		}
-		p.nextToken()
+	// 如果没有有效的命令 token，返回 nil
+	if p.curToken.Type != lexer.IDENTIFIER && 
+	   p.curToken.Type != lexer.STRING &&
+	   p.curToken.Type != lexer.STRING_SINGLE &&
+	   p.curToken.Type != lexer.STRING_DOUBLE &&
+	   p.curToken.Type != lexer.LBRACKET &&
+	   p.curToken.Type != lexer.DBL_LBRACKET &&
+	   p.curToken.Type != lexer.VAR &&
+	   p.curToken.Type != lexer.DOLLAR &&
+	   p.curToken.Type != lexer.COMMAND_SUBSTITUTION &&
+	   p.curToken.Type != lexer.ARITHMETIC_EXPANSION &&
+	   p.curToken.Type != lexer.NUMBER {
+		return nil
+	}
+	
+	// 检查是否是 case 模式（如 *）后跟 )
+	// 如果是，这不是命令，返回 nil
+	if (p.curToken.Type == lexer.IDENTIFIER || 
+	    p.curToken.Type == lexer.STRING ||
+	    p.curToken.Type == lexer.STRING_SINGLE ||
+	    p.curToken.Type == lexer.STRING_DOUBLE) && 
+	    p.peekToken.Type == lexer.RPAREN {
+		// 这可能是 case 模式，不是命令
+		// 但我们需要在 case 解析上下文中才能确定
+		// 这里先返回 nil，让调用者处理
+		return nil
 	}
 
+	// 解析命令（包括 [ 和 [[ 命令）
+	if p.curToken.Type == lexer.LBRACKET {
+		// [ 命令，创建一个标识符表达式
+		stmt.Command = &Identifier{Value: "["}
+	} else if p.curToken.Type == lexer.DBL_LBRACKET {
+		// [[ 命令，创建一个标识符表达式
+		stmt.Command = &Identifier{Value: "[["}
+	} else {
+		stmt.Command = p.parseExpression()
+	}
+	p.nextToken()
+
+	// 检查是否是 [[ 命令，需要特殊处理 && 和 ||
+	isDoubleBracket := false
+	if stmt.Command != nil {
+		if ident, ok := stmt.Command.(*Identifier); ok && ident.Value == "[[" {
+			isDoubleBracket = true
+		}
+	}
+	
 	// 解析参数和重定向
 	for p.curToken.Type != lexer.EOF && 
 		p.curToken.Type != lexer.SEMICOLON &&
 		p.curToken.Type != lexer.NEWLINE &&
 		p.curToken.Type != lexer.PIPE &&
-		p.curToken.Type != lexer.AND &&
-		p.curToken.Type != lexer.OR &&
 		p.curToken.Type != lexer.AMPERSAND &&
 		p.curToken.Type != lexer.THEN &&
 		p.curToken.Type != lexer.DO &&
@@ -190,12 +227,34 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 		p.curToken.Type != lexer.ELSE &&
 		p.curToken.Type != lexer.ELIF {
 		
-		// 检查是否是 [ 命令的结束括号
+		// 对于非 [[ 命令，遇到 && 或 || 时停止（这些是命令分隔符）
+		if !isDoubleBracket && (p.curToken.Type == lexer.AND || p.curToken.Type == lexer.OR) {
+			break
+		}
+		
+		// 检查是否是 [ 或 [[ 命令的结束括号
 		if p.curToken.Type == lexer.RBRACKET {
 			// 将 ] 作为参数添加（test命令需要它）
 			stmt.Args = append(stmt.Args, &Identifier{Value: "]"})
 			p.nextToken()
 			break
+		}
+		if p.curToken.Type == lexer.DBL_RBRACKET {
+			// 将 ]] 作为参数添加（[[命令需要它）
+			stmt.Args = append(stmt.Args, &Identifier{Value: "]]"})
+			p.nextToken()
+			break
+		}
+		
+		// 对于 [[ 命令，将 && 和 || 作为参数
+		if isDoubleBracket && (p.curToken.Type == lexer.AND || p.curToken.Type == lexer.OR) {
+			op := "&&"
+			if p.curToken.Type == lexer.OR {
+				op = "||"
+			}
+			stmt.Args = append(stmt.Args, &Identifier{Value: op})
+			p.nextToken()
+			continue
 		}
 		
 		// 检查重定向
@@ -211,6 +270,7 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 		}
 		
 		// 解析参数
+		// 注意：关键字（如 case、if、for 等）在命令参数位置时应该被当作普通标识符处理
 		if p.curToken.Type == lexer.IDENTIFIER || 
 		   p.curToken.Type == lexer.STRING ||
 		   p.curToken.Type == lexer.STRING_SINGLE ||
@@ -219,7 +279,22 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 		   p.curToken.Type == lexer.DOLLAR ||
 		   p.curToken.Type == lexer.COMMAND_SUBSTITUTION ||
 		   p.curToken.Type == lexer.ARITHMETIC_EXPANSION ||
-		   p.curToken.Type == lexer.NUMBER {
+		   p.curToken.Type == lexer.NUMBER ||
+		   p.curToken.Type == lexer.CASE ||
+		   p.curToken.Type == lexer.IF ||
+		   p.curToken.Type == lexer.THEN ||
+		   p.curToken.Type == lexer.ELSE ||
+		   p.curToken.Type == lexer.ELIF ||
+		   p.curToken.Type == lexer.FI ||
+		   p.curToken.Type == lexer.FOR ||
+		   p.curToken.Type == lexer.WHILE ||
+		   p.curToken.Type == lexer.DO ||
+		   p.curToken.Type == lexer.DONE ||
+		   p.curToken.Type == lexer.ESAC ||
+		   p.curToken.Type == lexer.FUNCTION ||
+		   p.curToken.Type == lexer.IN ||
+		   p.curToken.Type == lexer.SELECT ||
+		   p.curToken.Type == lexer.TIME {
 			stmt.Args = append(stmt.Args, p.parseExpression())
 		}
 		
@@ -290,6 +365,11 @@ func (p *Parser) parseRedirect() *Redirect {
 func (p *Parser) parseExpression() Expression {
 	switch p.curToken.Type {
 	case lexer.IDENTIFIER:
+		return &Identifier{Value: p.curToken.Literal}
+	// 关键字在表达式上下文中应该被当作普通标识符处理
+	case lexer.CASE, lexer.IF, lexer.THEN, lexer.ELSE, lexer.ELIF, lexer.FI,
+		 lexer.FOR, lexer.WHILE, lexer.DO, lexer.DONE, lexer.ESAC,
+		 lexer.FUNCTION, lexer.IN, lexer.SELECT, lexer.TIME:
 		return &Identifier{Value: p.curToken.Literal}
 	case lexer.STRING, lexer.STRING_SINGLE, lexer.STRING_DOUBLE:
 		// 判断是单引号还是双引号字符串
@@ -474,7 +554,8 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 		p.curToken.Type != lexer.FI &&
 		p.curToken.Type != lexer.DONE &&
 		p.curToken.Type != lexer.ELSE &&
-		p.curToken.Type != lexer.ELIF {
+		p.curToken.Type != lexer.ELIF &&
+		p.curToken.Type != lexer.ESAC {
 		stmt := p.parseStatement()
 		if stmt != nil {
 			block.Statements = append(block.Statements, stmt)

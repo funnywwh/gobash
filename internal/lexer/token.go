@@ -55,6 +55,8 @@ const (
 	RBRACE   // }
 	LBRACKET // [
 	RBRACKET // ]
+	DBL_LBRACKET // [[
+	DBL_RBRACKET // ]]
 
 	// 控制流关键字
 	IF

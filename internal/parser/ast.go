@@ -149,6 +149,23 @@ func (as *ArrayAssignmentStatement) String() string {
 	return "array assignment: " + as.Name
 }
 
+// CaseStatement case语句
+type CaseStatement struct {
+	Value  Expression
+	Cases  []*CaseClause
+}
+
+func (cs *CaseStatement) statementNode() {}
+func (cs *CaseStatement) String() string {
+	return "case statement"
+}
+
+// CaseClause case子句
+type CaseClause struct {
+	Patterns []string // 匹配模式列表（用 | 分隔）
+	Body     *BlockStatement
+}
+
 // Identifier 标识符
 type Identifier struct {
 	Value string

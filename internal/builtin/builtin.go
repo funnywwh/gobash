@@ -873,7 +873,7 @@ func evaluateTestExpression(args []string) (bool, error) {
 		right := args[2]
 		
 		switch op {
-		case "=":
+		case "=", "==": // = 用于 [，== 用于 [[
 			return left == right, nil
 		case "!=":
 			return left != right, nil

@@ -220,15 +220,23 @@ func (s *Shell) ExecuteScript(scriptPath string) error {
 
 // ExecuteReader 从Reader执行命令
 // 用于执行脚本文件，自动跳过shebang行和注释行
+// 支持多行语句（case、if、for等）
 func (s *Shell) ExecuteReader(reader io.Reader) error {
 	scanner := bufio.NewScanner(reader)
 	firstLine := true
+	lineNum := 0
+	var currentStatement strings.Builder
 
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+		lineNum++
+		originalLine := scanner.Text()
+		line := strings.TrimSpace(originalLine)
 		
-		// 跳过空行
+		// 跳过空行（但如果当前有未完成的语句，保留空行）
 		if line == "" {
+			if currentStatement.Len() > 0 {
+				currentStatement.WriteString("\n")
+			}
 			continue
 		}
 		
@@ -244,9 +252,41 @@ func (s *Shell) ExecuteReader(reader io.Reader) error {
 			continue
 		}
 		
-		// 执行每一行
-		if err := s.executeLine(scanner.Text()); err != nil {
-			return err
+		// 如果有未完成的语句，追加当前行
+		if currentStatement.Len() > 0 {
+			currentStatement.WriteString(" ")
+			currentStatement.WriteString(originalLine)
+		} else {
+			currentStatement.WriteString(originalLine)
+		}
+		
+		// 检查语句是否完成
+		statement := currentStatement.String()
+		if s.isStatementComplete(statement) {
+			// 执行完整的语句
+			if err := s.executeLine(statement); err != nil {
+				// 输出错误信息到stderr，包含行号
+				fmt.Fprintf(os.Stderr, "gobash: 第%d行: %v\n", lineNum, err)
+				fmt.Fprintf(os.Stderr, "  %s\n", statement)
+				// 如果设置了set -e，遇到错误应该退出
+				if s.options["e"] {
+					return fmt.Errorf("脚本执行失败（第%d行）: %v", lineNum, err)
+				}
+			}
+			// 重置当前语句
+			currentStatement.Reset()
+		}
+	}
+
+	// 如果还有未完成的语句，尝试执行
+	if currentStatement.Len() > 0 {
+		statement := currentStatement.String()
+		if err := s.executeLine(statement); err != nil {
+			fmt.Fprintf(os.Stderr, "gobash: 第%d行: %v\n", lineNum, err)
+			fmt.Fprintf(os.Stderr, "  %s\n", statement)
+			if s.options["e"] {
+				return fmt.Errorf("脚本执行失败（第%d行）: %v", lineNum, err)
+			}
 		}
 	}
 
@@ -255,6 +295,43 @@ func (s *Shell) ExecuteReader(reader io.Reader) error {
 	}
 
 	return nil
+}
+
+// isStatementComplete 检查语句是否完成
+// 检查是否有关键字未闭合（case需要esac，if需要fi，for/while需要done等）
+func (s *Shell) isStatementComplete(statement string) bool {
+	statement = strings.TrimSpace(statement)
+	if statement == "" {
+		return true
+	}
+	
+	// 简单的检查：统计关键字
+	caseCount := strings.Count(statement, "case ")
+	esacCount := strings.Count(statement, "esac")
+	
+	ifCount := strings.Count(statement, "if ")
+	fiCount := strings.Count(statement, " fi")
+	
+	forCount := strings.Count(statement, "for ")
+	whileCount := strings.Count(statement, "while ")
+	doneCount := strings.Count(statement, " done")
+	
+	// 检查case语句
+	if caseCount > esacCount {
+		return false
+	}
+	
+	// 检查if语句
+	if ifCount > fiCount {
+		return false
+	}
+	
+	// 检查for/while语句
+	if (forCount + whileCount) > doneCount {
+		return false
+	}
+	
+	return true
 }
 
 // executeLine 执行一行命令
