@@ -51,6 +51,9 @@ func init() {
 	builtins["sort"] = sortCmd
 	builtins["uniq"] = uniq
 	builtins["cut"] = cut
+	builtins["jobs"] = jobs
+	builtins["fg"] = fg
+	builtins["bg"] = bg
 }
 
 // GetBuiltins 获取所有内置命令
@@ -195,7 +198,9 @@ func env(args []string, env map[string]string) error {
 	return nil
 }
 
-// set 设置shell选项（简化版）
+// set 设置shell选项
+// 注意：set命令的实际处理在shell.go中的handleSetCommand函数中完成
+// 这个函数作为占位符，主要用于非交互式执行场景
 func set(args []string, env map[string]string) error {
 	if len(args) == 0 {
 		// 显示所有变量
@@ -204,7 +209,17 @@ func set(args []string, env map[string]string) error {
 		}
 		return nil
 	}
-	// TODO: 实现set选项
+	// set命令的选项处理在shell层完成（shell.go中的handleSetCommand）
+	// 这里只处理变量设置
+	for _, arg := range args {
+		if strings.Contains(arg, "=") {
+			parts := strings.SplitN(arg, "=", 2)
+			if len(parts) == 2 {
+				env[parts[0]] = parts[1]
+				os.Setenv(parts[0], parts[1])
+			}
+		}
+	}
 	return nil
 }
 

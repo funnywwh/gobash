@@ -18,6 +18,7 @@ type Executor struct {
 	builtins  map[string]builtin.BuiltinFunc
 	functions map[string]*parser.FunctionStatement
 	options   map[string]bool // shell选项状态
+	jobs      *JobManager     // 作业管理器
 }
 
 // New 创建新的执行器
@@ -27,6 +28,7 @@ func New() *Executor {
 		builtins:  builtin.GetBuiltins(),
 		functions: make(map[string]*parser.FunctionStatement),
 		options:   make(map[string]bool),
+		jobs:      NewJobManager(),
 	}
 	// 初始化环境变量
 	for _, env := range os.Environ() {
@@ -44,6 +46,11 @@ func (e *Executor) SetOptions(options map[string]bool) {
 // GetOptions 获取shell选项
 func (e *Executor) GetOptions() map[string]bool {
 	return e.options
+}
+
+// GetJobManager 获取作业管理器
+func (e *Executor) GetJobManager() *JobManager {
+	return e.jobs
 }
 
 // Execute 执行程序
@@ -120,6 +127,11 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 				os.Exit(1)
 			}
 			return err
+		}
+		
+		// 为需要访问JobManager的命令设置引用
+		if cmdName == "jobs" || cmdName == "fg" || cmdName == "bg" {
+			builtin.SetJobManager(e.jobs)
 		}
 		
 		if err := builtinFunc(args, e.env); err != nil {
@@ -271,6 +283,14 @@ func (e *Executor) executeExternalCommand(cmd *parser.CommandStatement) error {
 		if err := execCmd.Start(); err != nil {
 			return fmt.Errorf("无法启动命令 '%s': %v", cmdName, err)
 		}
+		// 构建命令字符串用于显示
+		cmdStr := cmdName
+		for _, arg := range args {
+			cmdStr += " " + arg
+		}
+		// 添加到作业管理器
+		jobID := e.jobs.AddJob(execCmd, cmdStr)
+		fmt.Fprintf(os.Stderr, "[%d] %d\n", jobID, execCmd.Process.Pid)
 		return nil
 	}
 
