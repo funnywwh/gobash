@@ -953,7 +953,9 @@ func tail(args []string, env map[string]string) error {
 	files := []string{}
 	
 	// 解析参数
-	for i, arg := range args {
+	i := 0
+	for i < len(args) {
+		arg := args[i]
 		if strings.HasPrefix(arg, "-") {
 			// 解析 -n 选项
 			if strings.HasPrefix(arg, "-n") {
@@ -976,6 +978,7 @@ func tail(args []string, env map[string]string) error {
 		} else {
 			files = append(files, arg)
 		}
+		i++
 	}
 	
 	// 如果没有指定文件，从stdin读取
