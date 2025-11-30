@@ -94,12 +94,18 @@ func (p *Parser) parseStatement() Statement {
 func (p *Parser) parseCommandStatement() *CommandStatement {
 	stmt := &CommandStatement{}
 
-	// 解析命令
+	// 解析命令（包括 [ 命令）
 	if p.curToken.Type == lexer.IDENTIFIER || 
 	   p.curToken.Type == lexer.STRING ||
 	   p.curToken.Type == lexer.STRING_SINGLE ||
-	   p.curToken.Type == lexer.STRING_DOUBLE {
-		stmt.Command = p.parseExpression()
+	   p.curToken.Type == lexer.STRING_DOUBLE ||
+	   p.curToken.Type == lexer.LBRACKET {
+		if p.curToken.Type == lexer.LBRACKET {
+			// [ 命令，创建一个标识符表达式
+			stmt.Command = &Identifier{Value: "["}
+		} else {
+			stmt.Command = p.parseExpression()
+		}
 		p.nextToken()
 	}
 
@@ -116,7 +122,8 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 		p.curToken.Type != lexer.DONE &&
 		p.curToken.Type != lexer.FI &&
 		p.curToken.Type != lexer.ELSE &&
-		p.curToken.Type != lexer.ELIF {
+		p.curToken.Type != lexer.ELIF &&
+		p.curToken.Type != lexer.RBRACKET { // [ 命令需要处理 ]
 		
 		// 检查重定向
 		if p.curToken.Type == lexer.REDIRECT_OUT ||
@@ -130,6 +137,14 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 			continue
 		}
 
+		// 检查是否是 [ 命令的结束括号
+		if p.curToken.Type == lexer.RBRACKET {
+			// 将 ] 作为参数添加（test命令需要它）
+			stmt.Args = append(stmt.Args, &Identifier{Value: "]"})
+			p.nextToken()
+			break
+		}
+		
 		// 解析参数
 		if p.curToken.Type == lexer.IDENTIFIER || 
 		   p.curToken.Type == lexer.STRING ||
