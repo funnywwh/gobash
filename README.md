@@ -373,6 +373,7 @@ gobash/
 **命令支持**
 - [x] 内置命令（cd, pwd, echo, exit, export, unset, env, set）
 - [x] 文件操作（ls, cat, mkdir, rmdir, rm, touch, clear）
+- [x] 文本处理（head, tail, wc, grep, sort）
 - [x] 别名管理（alias, unalias）
 - [x] 命令历史（history命令，持久化存储）
 
@@ -401,6 +402,7 @@ gobash/
 - [ ] 命令自动补全功能
 - [ ] 更多Bash特性（数组、关联数组、进程替换等）
 - [ ] 作业控制（后台任务、fg, bg, jobs）
+- [x] 更多内置命令（head, tail, wc, grep, sort）
 - [ ] 更多测试用例和文档
 
 ## 技术实现
