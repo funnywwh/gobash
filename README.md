@@ -447,6 +447,8 @@ gobash/
 - [ ] 更多Bash特性（数组、关联数组、进程替换等）
 - [x] 更多内置命令（head, tail, wc, grep, sort, uniq, cut）
 - [x] 更多测试用例和文档（示例脚本和使用文档）
+- [x] 单元测试（lexer、parser、builtin模块）
+- [x] GoDoc API文档（核心模块包级文档）
 
 ## 技术实现
 

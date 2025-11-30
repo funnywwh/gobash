@@ -1,3 +1,4 @@
+// Package lexer 提供词法分析功能，将输入字符串分解为token序列
 package lexer
 
 import (
@@ -7,6 +8,7 @@ import (
 )
 
 // Lexer 词法分析器
+// 负责将输入的shell命令字符串分解为一系列token
 type Lexer struct {
 	input        string
 	position     int  // 当前位置

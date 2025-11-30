@@ -1,3 +1,4 @@
+// Package executor 提供命令执行功能，解释执行AST并处理命令、管道、重定向等
 package executor
 
 import (
@@ -13,6 +14,7 @@ import (
 )
 
 // Executor 执行器
+// 负责解释执行AST，处理命令执行、管道、重定向、环境变量展开等功能
 type Executor struct {
 	env       map[string]string
 	builtins  map[string]builtin.BuiltinFunc

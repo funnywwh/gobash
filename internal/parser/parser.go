@@ -1,3 +1,4 @@
+// Package parser 提供语法分析功能，将token序列解析为抽象语法树（AST）
 package parser
 
 import (
@@ -5,6 +6,7 @@ import (
 )
 
 // Parser 语法分析器
+// 负责将token序列解析为抽象语法树（AST），支持shell的各种语法结构
 type Parser struct {
 	l      *lexer.Lexer
 	errors []string
