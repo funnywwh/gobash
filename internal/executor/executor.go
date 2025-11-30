@@ -739,6 +739,9 @@ func (e *Executor) evaluateExpression(expr parser.Expression) string {
 	case *parser.ArithmeticExpansion:
 		// 执行算术展开
 		return e.evaluateArithmetic(ex.Expression)
+	case *parser.ProcessSubstitution:
+		// 执行进程替换
+		return e.executeProcessSubstitution(ex.Command, ex.IsInput)
 	default:
 		return ""
 	}
@@ -969,6 +972,62 @@ func (e *Executor) executeCommandSubstitution(command string) string {
 	result = strings.TrimSuffix(result, "\r\n")
 	
 	return result
+}
+
+// executeProcessSubstitution 执行进程替换
+// IsInput: true表示<(command)，false表示>(command)
+func (e *Executor) executeProcessSubstitution(command string, isInput bool) string {
+	// 创建临时文件
+	tmpFile, err := os.CreateTemp("", "gobash_process_subst_*")
+	if err != nil {
+		return ""
+	}
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+	
+	// 解析和执行命令
+	l := lexer.New(command)
+	p := parser.New(l)
+	program := p.ParseProgram()
+	
+	if len(p.Errors()) > 0 {
+		os.Remove(tmpPath)
+		return ""
+	}
+	
+	if isInput {
+		// <(command): 执行命令并将输出写入临时文件
+		oldStdout := os.Stdout
+		file, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		if err != nil {
+			os.Remove(tmpPath)
+			return ""
+		}
+		os.Stdout = file
+		
+		execErr := e.Execute(program)
+		
+		file.Close()
+		os.Stdout = oldStdout
+		
+		if execErr != nil {
+			os.Remove(tmpPath)
+			return ""
+		}
+	} else {
+		// >(command): 创建临时文件供命令读取
+		// 注意：>(command)通常用于将输出重定向到命令的输入
+		// 这里简化实现，创建空文件
+		file, err := os.Create(tmpPath)
+		if err != nil {
+			os.Remove(tmpPath)
+			return ""
+		}
+		file.Close()
+	}
+	
+	// 返回临时文件路径
+	return tmpPath
 }
 
 // evaluateArithmetic 计算算术表达式

@@ -203,3 +203,18 @@ func (ae *ArithmeticExpansion) String() string {
 	return "$((" + ae.Expression + "))"
 }
 
+// ProcessSubstitution 进程替换
+// 例如：<(command) 或 >(command)
+type ProcessSubstitution struct {
+	Command string
+	IsInput bool // true表示<(command)，false表示>(command)
+}
+
+func (ps *ProcessSubstitution) expressionNode() {}
+func (ps *ProcessSubstitution) String() string {
+	if ps.IsInput {
+		return "<(" + ps.Command + ")"
+	}
+	return ">(" + ps.Command + ")"
+}
+

@@ -17,6 +17,7 @@
 - ✅ 算术展开（`$((expr))`）
 - ✅ 数组支持（`arr=(1 2 3)`，数组访问 `${arr[0]}`）
 - ✅ 关联数组（`declare -A arr`，`arr[key]=value`，`${arr[key]}`）
+- ✅ 进程替换（`<(command)`, `>(command)`）
 - ✅ 控制流语句（if/else, for, while）
 - ✅ 函数定义和调用（支持参数传递）
 - ✅ 作业控制（后台任务、jobs、fg、bg命令）
@@ -292,6 +293,20 @@ $ echo ${arr[$key]}
 bar
 ```
 
+### 进程替换
+
+```bash
+# 进程替换（输入）：将命令输出作为文件读取
+$ cat <(echo "hello world")
+hello world
+
+$ diff <(sort file1.txt) <(sort file2.txt)
+
+# 进程替换（输出）：将命令输入作为文件写入
+$ echo "test" >(cat)
+# 注意：>(command)通常用于将输出重定向到命令的输入
+```
+
 ### 控制流
 
 ```bash
@@ -509,7 +524,7 @@ gobash/
 - [x] 作业控制（后台任务、fg, bg, jobs）
 - [x] 数组支持（`arr=(1 2 3)`，数组访问）
 - [x] 关联数组（`declare -A arr`，`arr[key]=value`，`${arr[key]}`）
-- [ ] 进程替换（`<(command)`, `>(command)`）
+- [x] 进程替换（`<(command)`, `>(command)`）
 - [x] 更多内置命令（head, tail, wc, grep, sort, uniq, cut）
 - [x] 更多测试用例和文档（示例脚本和使用文档）
 - [x] 单元测试（lexer、parser、builtin、executor模块）

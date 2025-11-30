@@ -43,6 +43,10 @@ const (
 	
 	// 算术展开
 	ARITHMETIC_EXPANSION // $((expr))
+	
+	// 进程替换
+	PROCESS_SUBSTITUTION_IN  // <(command)
+	PROCESS_SUBSTITUTION_OUT // >(command)
 
 	// 括号和分组
 	LPAREN   // (
@@ -153,6 +157,14 @@ func (t TokenType) String() string {
 		return "DONE"
 	case FUNCTION:
 		return "FUNCTION"
+	case COMMAND_SUBSTITUTION:
+		return "COMMAND_SUBSTITUTION"
+	case ARITHMETIC_EXPANSION:
+		return "ARITHMETIC_EXPANSION"
+	case PROCESS_SUBSTITUTION_IN:
+		return "PROCESS_SUBSTITUTION_IN"
+	case PROCESS_SUBSTITUTION_OUT:
+		return "PROCESS_SUBSTITUTION_OUT"
 	default:
 		return "UNKNOWN"
 	}

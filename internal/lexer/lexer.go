@@ -93,6 +93,16 @@ func (l *Lexer) NextToken() Token {
 			ch := l.ch
 			l.readChar()
 			tok = Token{Type: REDIRECT_APPEND, Literal: string(ch) + string(l.ch), Line: tok.Line, Column: tok.Column}
+		} else if l.peekChar() == '(' {
+			// 进程替换 >(command)
+			startLine := l.line
+			startColumn := l.column
+			l.readChar() // 跳过 >
+			l.readChar() // 跳过 (
+			tok = l.readProcessSubstitution()
+			tok.Type = PROCESS_SUBSTITUTION_OUT
+			tok.Line = startLine
+			tok.Column = startColumn
 		} else if isDigit(l.peekChar()) {
 			// 处理文件描述符重定向，如 2>
 			tok = l.readRedirectFD()
@@ -100,7 +110,19 @@ func (l *Lexer) NextToken() Token {
 			tok = newToken(REDIRECT_OUT, l.ch, tok.Line, tok.Column)
 		}
 	case '<':
-		tok = newToken(REDIRECT_IN, l.ch, tok.Line, tok.Column)
+		if l.peekChar() == '(' {
+			// 进程替换 <(command)
+			startLine := l.line
+			startColumn := l.column
+			l.readChar() // 跳过 <
+			l.readChar() // 跳过 (
+			tok = l.readProcessSubstitution()
+			tok.Type = PROCESS_SUBSTITUTION_IN
+			tok.Line = startLine
+			tok.Column = startColumn
+		} else {
+			tok = newToken(REDIRECT_IN, l.ch, tok.Line, tok.Column)
+		}
 	case ';':
 		tok = newToken(SEMICOLON, l.ch, tok.Line, tok.Column)
 	case '(':
@@ -528,6 +550,48 @@ func (l *Lexer) readCommandSubstitutionParen() Token {
 	
 	return Token{
 		Type:    COMMAND_SUBSTITUTION,
+		Literal: literal.String(),
+		Line:    l.line,
+		Column:  l.column,
+	}
+}
+
+// readProcessSubstitution 读取进程替换（<(command)或>(command)格式）
+func (l *Lexer) readProcessSubstitution() Token {
+	var literal strings.Builder
+	depth := 1 // 已经有一个开括号
+	
+	for depth > 0 && l.ch != 0 {
+		if l.ch == '(' {
+			depth++
+			literal.WriteByte(l.ch)
+			l.readChar()
+		} else if l.ch == ')' {
+			depth--
+			if depth > 0 {
+				literal.WriteByte(l.ch)
+			}
+			if depth == 0 {
+				l.readChar() // 跳过结束括号
+				break
+			}
+			l.readChar()
+		} else if l.ch == '\\' {
+			// 转义字符
+			literal.WriteByte(l.ch)
+			l.readChar()
+			if l.ch != 0 {
+				literal.WriteByte(l.ch)
+				l.readChar()
+			}
+		} else {
+			literal.WriteByte(l.ch)
+			l.readChar()
+		}
+	}
+	
+	return Token{
+		Type:    PROCESS_SUBSTITUTION_IN, // 临时类型，实际类型由调用者设置
 		Literal: literal.String(),
 		Line:    l.line,
 		Column:  l.column,

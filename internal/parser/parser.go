@@ -301,6 +301,10 @@ func (p *Parser) parseExpression() Expression {
 		return &CommandSubstitution{Command: p.curToken.Literal}
 	case lexer.ARITHMETIC_EXPANSION:
 		return &ArithmeticExpansion{Expression: p.curToken.Literal}
+	case lexer.PROCESS_SUBSTITUTION_IN:
+		return &ProcessSubstitution{Command: p.curToken.Literal, IsInput: true}
+	case lexer.PROCESS_SUBSTITUTION_OUT:
+		return &ProcessSubstitution{Command: p.curToken.Literal, IsInput: false}
 	case lexer.DOLLAR:
 		// 处理特殊变量，如 $?
 		p.nextToken()
