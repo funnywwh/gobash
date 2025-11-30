@@ -46,6 +46,7 @@ func init() {
 	builtins["["] = testCmd // [ 是 test 的别名，但需要处理结尾的 ]
 	builtins["head"] = head
 	builtins["tail"] = tail
+	builtins["wc"] = wc
 }
 
 // GetBuiltins 获取所有内置命令
