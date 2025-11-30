@@ -230,7 +230,7 @@ if len(stmt.In) == 0 {
   - ✅ 完善更多函数和类型的文档注释（BuiltinFunc、GetBuiltins、cd、pwd、echo、export、unset、ls、cat、mkdir等）
 
 **更多Bash特性（低优先级）**
-- 🔄 数组支持（`arr=(1 2 3)`）- **进行中**（已实现基础框架：AST节点、executor存储、数组访问，正在调试lexer/parser解析逻辑）
+- ✅ 数组支持（`arr=(1 2 3)`）- **已完成**（已实现完整的数组功能：数组赋值、数组访问、数组元素展开）
 - ⬜ 关联数组（`declare -A arr`）
 - ⬜ 进程替换（`<(command)`, `>(command)`）
 
