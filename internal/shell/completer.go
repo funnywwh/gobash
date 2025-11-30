@@ -166,8 +166,13 @@ func (c *Completer) completeFiles(prefix string) ([][]rune, int) {
 	for _, entry := range entries {
 		name := entry.Name()
 		if strings.HasPrefix(name, pattern) {
-			fullPath := filepath.Join(dir, name)
-			if dir != "." {
+			var fullPath string
+			if dir == "." {
+				// 当前目录，只返回文件名
+				fullPath = name
+			} else {
+				// 有目录路径，返回完整路径
+				fullPath = filepath.Join(dir, name)
 				// 保持原始路径格式
 				if strings.Contains(prefix, "\\") {
 					fullPath = strings.ReplaceAll(fullPath, "/", "\\")
@@ -185,6 +190,7 @@ func (c *Completer) completeFiles(prefix string) ([][]rune, int) {
 		}
 	}
 	
-	return matches, len(pattern)
+	// 返回需要替换的字符数（整个前缀）
+	return matches, len(prefix)
 }
 
