@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -859,5 +860,197 @@ func compareNumbers(left, right, op string) (bool, error) {
 	}
 	
 	return false, nil
+}
+
+// head 显示文件的前几行
+func head(args []string, env map[string]string) error {
+	n := 10 // 默认显示10行
+	files := []string{}
+	
+	// 解析参数
+	for i, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			// 解析 -n 选项
+			if strings.HasPrefix(arg, "-n") {
+				if len(arg) > 2 {
+					// -n5 格式
+					if num, err := strconv.Atoi(arg[2:]); err == nil {
+						n = num
+					}
+				} else if i+1 < len(args) {
+					// -n 5 格式
+					if num, err := strconv.Atoi(args[i+1]); err == nil {
+						n = num
+						i++ // 跳过下一个参数
+					}
+				}
+			} else if num, err := strconv.Atoi(arg[1:]); err == nil {
+				// -5 格式
+				n = num
+			}
+		} else {
+			files = append(files, arg)
+		}
+	}
+	
+	// 如果没有指定文件，从stdin读取
+	if len(files) == 0 {
+		return headFromStdin(n)
+	}
+	
+	// 处理多个文件
+	for i, file := range files {
+		if len(files) > 1 {
+			if i > 0 {
+				fmt.Println()
+			}
+			fmt.Printf("==> %s <==\n", file)
+		}
+		
+		if err := headFromFile(file, n); err != nil {
+			return err
+		}
+	}
+	
+	return nil
+}
+
+// headFromFile 从文件读取前n行
+func headFromFile(filename string, n int) error {
+	file, err := os.Open(filename)
+	if err != nil {
+		return fmt.Errorf("head: %v", err)
+	}
+	defer file.Close()
+	
+	scanner := bufio.NewScanner(file)
+	lineCount := 0
+	
+	for scanner.Scan() && lineCount < n {
+		fmt.Println(scanner.Text())
+		lineCount++
+	}
+	
+	return scanner.Err()
+}
+
+// headFromStdin 从stdin读取前n行
+func headFromStdin(n int) error {
+	scanner := bufio.NewScanner(os.Stdin)
+	lineCount := 0
+	
+	for scanner.Scan() && lineCount < n {
+		fmt.Println(scanner.Text())
+		lineCount++
+	}
+	
+	return scanner.Err()
+}
+
+// tail 显示文件的后几行
+func tail(args []string, env map[string]string) error {
+	n := 10 // 默认显示10行
+	files := []string{}
+	
+	// 解析参数
+	for i, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			// 解析 -n 选项
+			if strings.HasPrefix(arg, "-n") {
+				if len(arg) > 2 {
+					// -n5 格式
+					if num, err := strconv.Atoi(arg[2:]); err == nil {
+						n = num
+					}
+				} else if i+1 < len(args) {
+					// -n 5 格式
+					if num, err := strconv.Atoi(args[i+1]); err == nil {
+						n = num
+						i++ // 跳过下一个参数
+					}
+				}
+			} else if num, err := strconv.Atoi(arg[1:]); err == nil {
+				// -5 格式
+				n = num
+			}
+		} else {
+			files = append(files, arg)
+		}
+	}
+	
+	// 如果没有指定文件，从stdin读取
+	if len(files) == 0 {
+		return tailFromStdin(n)
+	}
+	
+	// 处理多个文件
+	for i, file := range files {
+		if len(files) > 1 {
+			if i > 0 {
+				fmt.Println()
+			}
+			fmt.Printf("==> %s <==\n", file)
+		}
+		
+		if err := tailFromFile(file, n); err != nil {
+			return err
+		}
+	}
+	
+	return nil
+}
+
+// tailFromFile 从文件读取后n行
+func tailFromFile(filename string, n int) error {
+	file, err := os.Open(filename)
+	if err != nil {
+		return fmt.Errorf("tail: %v", err)
+	}
+	defer file.Close()
+	
+	// 读取所有行
+	scanner := bufio.NewScanner(file)
+	lines := []string{}
+	
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	
+	// 显示最后n行
+	start := len(lines) - n
+	if start < 0 {
+		start = 0
+	}
+	
+	for i := start; i < len(lines); i++ {
+		fmt.Println(lines[i])
+	}
+	
+	return nil
+}
+
+// tailFromStdin 从stdin读取后n行（简化实现，使用缓冲区）
+func tailFromStdin(n int) error {
+	scanner := bufio.NewScanner(os.Stdin)
+	lines := []string{}
+	
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+		// 只保留最后n行
+		if len(lines) > n {
+			lines = lines[1:]
+		}
+	}
+	
+	// 显示所有行
+	for _, line := range lines {
+		fmt.Println(line)
+	}
+	
+	return scanner.Err()
 }
 
