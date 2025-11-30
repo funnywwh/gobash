@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"strings"
 	"gobash/internal/lexer"
 )
 
