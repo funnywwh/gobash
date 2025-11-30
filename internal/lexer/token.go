@@ -103,6 +103,10 @@ func (t TokenType) String() string {
 		return "IDENTIFIER"
 	case STRING:
 		return "STRING"
+	case STRING_SINGLE:
+		return "STRING_SINGLE"
+	case STRING_DOUBLE:
+		return "STRING_DOUBLE"
 	case NUMBER:
 		return "NUMBER"
 	case PIPE:

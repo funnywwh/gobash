@@ -380,8 +380,9 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 			   p.peekToken.Type == lexer.DONE ||
 			   p.peekToken.Type == lexer.ELSE ||
 			   p.peekToken.Type == lexer.ELIF ||
-			   p.peekToken.Type == lexer.ESAC {
-				// 移动到换行符，然后停止解析
+			   p.peekToken.Type == lexer.ESAC ||
+			   p.peekToken.Type == lexer.EOF {
+				// 移动到换行符或结束标记，然后停止解析
 				p.nextToken()
 				break
 			}
@@ -419,7 +420,8 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 		   p.peekToken.Type == lexer.DONE ||
 		   p.peekToken.Type == lexer.ELSE ||
 		   p.peekToken.Type == lexer.ELIF ||
-		   p.peekToken.Type == lexer.ESAC {
+		   p.peekToken.Type == lexer.ESAC ||
+		   p.peekToken.Type == lexer.EOF {
 			break
 		}
 		

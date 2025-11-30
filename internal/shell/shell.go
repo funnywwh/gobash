@@ -639,6 +639,15 @@ func splitCommands(line string) []string {
 			quoteChar = 0
 			current.WriteByte(ch)
 		} else if ch == ';' && !inQuotes {
+			// 检查是否是双分号 ;;（case语句的结束符）
+			if i+1 < len(line) && line[i+1] == ';' {
+				// 双分号，不分割命令，将 ;; 作为当前命令的一部分
+				current.WriteByte(ch)
+				current.WriteByte(line[i+1])
+				i++ // 跳过第二个分号
+				continue
+			}
+			
 			// 检查分号后的单词是否是控制流关键字（do、then等）
 			// 如果是，这个分号不应该分割命令
 			remaining := line[i+1:]
