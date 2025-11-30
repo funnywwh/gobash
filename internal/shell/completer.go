@@ -60,14 +60,17 @@ func (c *Completer) completeCommands(prefix string) ([][]rune, int) {
 	
 	for _, cmd := range builtins {
 		if strings.HasPrefix(cmd, prefix) {
-			matches = append(matches, []rune(cmd))
+			// 只返回需要补全的部分（去掉已输入的前缀）
+			suffix := cmd[len(prefix):]
+			matches = append(matches, []rune(suffix))
 		}
 	}
 	
 	// 2. 别名
 	for alias := range c.shell.aliases {
 		if strings.HasPrefix(alias, prefix) {
-			matches = append(matches, []rune(alias))
+			suffix := alias[len(prefix):]
+			matches = append(matches, []rune(suffix))
 		}
 	}
 	
@@ -99,7 +102,8 @@ func (c *Completer) completeCommands(prefix string) ([][]rune, int) {
 				}
 				if strings.HasPrefix(name, prefix) && !seen[name] {
 					seen[name] = true
-					matches = append(matches, []rune(name))
+					suffix := name[len(prefix):]
+					matches = append(matches, []rune(suffix))
 				}
 			}
 		}
@@ -124,10 +128,14 @@ func (c *Completer) completeVariables(prefix string) ([][]rune, int) {
 			key := parts[0]
 			if strings.HasPrefix(key, varName) && !seen[key] {
 				seen[key] = true
+				// 只返回需要补全的部分（去掉已输入的变量名前缀）
+				suffix := key[len(varName):]
 				if strings.HasPrefix(prefix, "${") {
-					matches = append(matches, []rune("${"+key+"}"))
+					// 如果原始前缀是 ${VAR，返回 VAR的剩余部分}
+					matches = append(matches, []rune(suffix+"}"))
 				} else {
-					matches = append(matches, []rune("$"+key))
+					// 如果原始前缀是 $VAR，返回 VAR的剩余部分
+					matches = append(matches, []rune(suffix))
 				}
 			}
 		}
@@ -166,27 +174,18 @@ func (c *Completer) completeFiles(prefix string) ([][]rune, int) {
 	for _, entry := range entries {
 		name := entry.Name()
 		if strings.HasPrefix(name, pattern) {
-			var fullPath string
-			if dir == "." {
-				// 当前目录，只返回文件名
-				fullPath = name
-			} else {
-				// 有目录路径，返回完整路径
-				fullPath = filepath.Join(dir, name)
-				// 保持原始路径格式
-				if strings.Contains(prefix, "\\") {
-					fullPath = strings.ReplaceAll(fullPath, "/", "\\")
-				}
-			}
+			// 只返回需要补全的部分（去掉已输入的文件名前缀）
+			suffix := name[len(pattern):]
+			
 			// 如果是目录，添加路径分隔符
 			if entry.IsDir() {
 				if strings.Contains(prefix, "\\") {
-					fullPath += "\\"
+					suffix += "\\"
 				} else {
-					fullPath += "/"
+					suffix += "/"
 				}
 			}
-			matches = append(matches, []rune(fullPath))
+			matches = append(matches, []rune(suffix))
 		}
 	}
 	
