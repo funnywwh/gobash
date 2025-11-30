@@ -226,6 +226,36 @@ history -c
 
 历史记录会自动保存到 `~/.gobash_history` 文件，下次启动时会自动加载。
 
+### Shell选项（set命令）
+
+```bash
+# 显示当前选项状态
+$ set
+--- Shell Options ---
+
+# 启用命令跟踪（显示执行的命令）
+$ set -x
+$ echo "hello"
++ echo hello
+hello
+
+# 关闭命令跟踪
+$ set +x
+
+# 启用错误时立即退出
+$ set -e
+$ false
+# 脚本会立即退出
+
+# 启用未定义变量检查
+$ set -u
+$ echo $UNDEFINED_VAR
+错误: 执行错误: 未定义的变量: UNDEFINED_VAR
+
+# 组合多个选项
+$ set -xe
+```
+
 ### 多行输入
 
 ```bash
