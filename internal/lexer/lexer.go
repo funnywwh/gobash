@@ -52,6 +52,14 @@ func (l *Lexer) peekChar() byte {
 	return l.input[l.readPosition]
 }
 
+// peekChar2 查看下下个字符
+func (l *Lexer) peekChar2() byte {
+	if l.readPosition+1 >= len(l.input) {
+		return 0
+	}
+	return l.input[l.readPosition+1]
+}
+
 // NextToken 读取下一个token
 func (l *Lexer) NextToken() Token {
 	var tok Token
@@ -116,15 +124,29 @@ func (l *Lexer) NextToken() Token {
 	case '\\':
 		tok = newToken(ESCAPE, l.ch, tok.Line, tok.Column)
 	case '$':
-		// 检查是否是 $(command) 格式的命令替换
+		// 检查是否是 $((expr)) 格式的算术展开
 		if l.peekChar() == '(' {
-			startLine := l.line
-			startColumn := l.column
-			l.readChar() // 跳过 $
-			l.readChar() // 跳过 (
-			tok = l.readCommandSubstitutionParen()
-			tok.Line = startLine
-			tok.Column = startColumn
+			peek2 := l.peekChar2()
+			if peek2 == '(' {
+				// $(( 算术展开
+				startLine := l.line
+				startColumn := l.column
+				l.readChar() // 跳过 $
+				l.readChar() // 跳过第一个 (
+				l.readChar() // 跳过第二个 (
+				tok = l.readArithmeticExpansion()
+				tok.Line = startLine
+				tok.Column = startColumn
+			} else {
+				// $(command) 命令替换
+				startLine := l.line
+				startColumn := l.column
+				l.readChar() // 跳过 $
+				l.readChar() // 跳过 (
+				tok = l.readCommandSubstitutionParen()
+				tok.Line = startLine
+				tok.Column = startColumn
+			}
 		} else {
 			tok = l.readVariable()
 		}
@@ -385,6 +407,40 @@ func (l *Lexer) readCommandSubstitution() Token {
 		Literal: result,
 		Line:    startLine,
 		Column:  startColumn,
+	}
+}
+
+// readArithmeticExpansion 读取算术展开（$((expr))格式）
+func (l *Lexer) readArithmeticExpansion() Token {
+	var literal strings.Builder
+	depth := 2 // 已经有两个开括号
+	
+	for depth > 0 && l.ch != 0 {
+		if l.ch == '(' {
+			depth++
+			literal.WriteByte(l.ch)
+			l.readChar()
+		} else if l.ch == ')' {
+			depth--
+			if depth > 0 {
+				literal.WriteByte(l.ch)
+			}
+			if depth == 0 {
+				l.readChar() // 跳过结束括号
+				break
+			}
+			l.readChar()
+		} else {
+			literal.WriteByte(l.ch)
+			l.readChar()
+		}
+	}
+	
+	return Token{
+		Type:    ARITHMETIC_EXPANSION,
+		Literal: literal.String(),
+		Line:    l.line,
+		Column:  l.column,
 	}
 }
 

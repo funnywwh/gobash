@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"gobash/internal/builtin"
 	"gobash/internal/lexer"
@@ -524,6 +525,9 @@ func (e *Executor) evaluateExpression(expr parser.Expression) string {
 	case *parser.CommandSubstitution:
 		// 执行命令替换
 		return e.executeCommandSubstitution(ex.Command)
+	case *parser.ArithmeticExpansion:
+		// 执行算术展开
+		return e.evaluateArithmetic(ex.Expression)
 	default:
 		return ""
 	}
@@ -728,6 +732,169 @@ func (e *Executor) executeCommandSubstitution(command string) string {
 	result = strings.TrimSuffix(result, "\r\n")
 	
 	return result
+}
+
+// evaluateArithmetic 计算算术表达式
+func (e *Executor) evaluateArithmetic(expr string) string {
+	// 移除空白字符
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return "0"
+	}
+	
+	// 展开变量
+	expr = e.expandVariablesInString(expr)
+	
+	// 简单的算术表达式求值
+	// 支持: +, -, *, /, %, (, )
+	// 使用递归下降解析器
+	
+	result, err := evaluateArithmeticExpression(expr)
+	if err != nil {
+		return "0"
+	}
+	
+	return fmt.Sprintf("%d", result)
+}
+
+// evaluateArithmeticExpression 计算算术表达式（支持 +, -, *, /, %, 括号）
+func evaluateArithmeticExpression(expr string) (int64, error) {
+	// 移除所有空白字符
+	expr = strings.ReplaceAll(expr, " ", "")
+	expr = strings.ReplaceAll(expr, "\t", "")
+	
+	if expr == "" {
+		return 0, nil
+	}
+	
+	// 使用简单的递归下降解析器
+	pos := 0
+	result, err := parseExpression(expr, &pos)
+	if err != nil {
+		return 0, err
+	}
+	
+	return result, nil
+}
+
+// parseExpression 解析表达式（处理 +, -）
+func parseExpression(expr string, pos *int) (int64, error) {
+	result, err := parseTerm(expr, pos)
+	if err != nil {
+		return 0, err
+	}
+	
+	for *pos < len(expr) {
+		if expr[*pos] == '+' {
+			*pos++
+			term, err := parseTerm(expr, pos)
+			if err != nil {
+				return 0, err
+			}
+			result += term
+		} else if expr[*pos] == '-' {
+			*pos++
+			term, err := parseTerm(expr, pos)
+			if err != nil {
+				return 0, err
+			}
+			result -= term
+		} else {
+			break
+		}
+	}
+	
+	return result, nil
+}
+
+// parseTerm 解析项（处理 *, /, %）
+func parseTerm(expr string, pos *int) (int64, error) {
+	result, err := parseFactor(expr, pos)
+	if err != nil {
+		return 0, err
+	}
+	
+	for *pos < len(expr) {
+		if expr[*pos] == '*' {
+			*pos++
+			factor, err := parseFactor(expr, pos)
+			if err != nil {
+				return 0, err
+			}
+			result *= factor
+		} else if expr[*pos] == '/' {
+			*pos++
+			factor, err := parseFactor(expr, pos)
+			if err != nil {
+				return 0, err
+			}
+			if factor == 0 {
+				return 0, fmt.Errorf("division by zero")
+			}
+			result /= factor
+		} else if expr[*pos] == '%' {
+			*pos++
+			factor, err := parseFactor(expr, pos)
+			if err != nil {
+				return 0, err
+			}
+			if factor == 0 {
+				return 0, fmt.Errorf("modulo by zero")
+			}
+			result %= factor
+		} else {
+			break
+		}
+	}
+	
+	return result, nil
+}
+
+// parseFactor 解析因子（处理数字和括号）
+func parseFactor(expr string, pos *int) (int64, error) {
+	if *pos >= len(expr) {
+		return 0, fmt.Errorf("unexpected end of expression")
+	}
+	
+	if expr[*pos] == '(' {
+		*pos++
+		result, err := parseExpression(expr, pos)
+		if err != nil {
+			return 0, err
+		}
+		if *pos >= len(expr) || expr[*pos] != ')' {
+			return 0, fmt.Errorf("missing closing parenthesis")
+		}
+		*pos++
+		return result, nil
+	}
+	
+	// 解析数字
+	start := *pos
+	if expr[*pos] == '-' || expr[*pos] == '+' {
+		*pos++
+	}
+	
+	if *pos >= len(expr) || !isDigitArith(expr[*pos]) {
+		return 0, fmt.Errorf("expected number")
+	}
+	
+	for *pos < len(expr) && isDigitArith(expr[*pos]) {
+		*pos++
+	}
+	
+	numStr := expr[start:*pos]
+	value, err := strconv.ParseInt(numStr, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	
+	return value, nil
+}
+
+// isDigitArith 判断是否为数字（用于算术表达式）
+func isDigitArith(ch byte) bool {
+	return ch >= '0' && ch <= '9'
 }
 
 // splitEnv 分割环境变量字符串

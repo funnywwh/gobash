@@ -181,3 +181,13 @@ func (cs *CommandSubstitution) String() string {
 	return "$(" + cs.Command + ")"
 }
 
+// ArithmeticExpansion 算术展开
+type ArithmeticExpansion struct {
+	Expression string
+}
+
+func (ae *ArithmeticExpansion) expressionNode() {}
+func (ae *ArithmeticExpansion) String() string {
+	return "$((" + ae.Expression + "))"
+}
+

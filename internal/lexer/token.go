@@ -40,6 +40,9 @@ const (
 	
 	// 命令替换
 	COMMAND_SUBSTITUTION // `command` 或 $(command)
+	
+	// 算术展开
+	ARITHMETIC_EXPANSION // $((expr))
 
 	// 括号和分组
 	LPAREN   // (
