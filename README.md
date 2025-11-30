@@ -450,7 +450,7 @@ gobash/
 - [x] 单元测试（lexer、parser、builtin、executor模块）
 - [x] 集成测试（端到端功能测试）
 - [x] GoDoc API文档（核心模块包级文档）
-- [x] 扩展builtin命令测试（cat、ls、rm、rmdir、test、type、env、which等）
+- [x] 扩展builtin命令测试（cat、ls、rm、rmdir、test、type、env、which、head、tail、wc、grep、sort、uniq、cut、clear等）
 - [x] 完善GoDoc注释（核心模块和所有主要函数）
 - [x] 创建项目总结文档
 - [x] 项目达到100%完成度

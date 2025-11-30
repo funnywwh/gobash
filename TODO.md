@@ -218,7 +218,7 @@ if len(stmt.In) == 0 {
   - ✅ parser模块测试（命令、if、for、函数、管道、重定向）
   - ✅ builtin命令测试（echo、pwd、export、mkdir等基础命令）
   - ✅ executor模块测试（命令执行、环境变量、控制流、函数等）
-  - ✅ 更多builtin命令测试（cat、ls、rm、rmdir、test、type、env、which）
+  - ✅ 更多builtin命令测试（cat、ls、rm、rmdir、test、type、env、which、head、tail、wc、grep、sort、uniq、cut、clear）
 - ✅ 集成测试（端到端测试）- **已完成**
   - ✅ 基本命令测试（echo、pwd、export）
   - ✅ 脚本执行测试
@@ -246,7 +246,7 @@ if len(stmt.In) == 0 {
 **用户体验**: 100% ✅  
 **示例脚本**: 100% ✅  
 **文档**: 100% ✅（已添加所有核心模块和主要函数的GoDoc注释，创建了项目总结文档）
-**测试**: 95% ✅（单元测试和集成测试已完成，覆盖大部分builtin命令）
+**测试**: 98% ✅（单元测试和集成测试已完成，覆盖所有主要builtin命令）
 
 **总体完成度**: 100% ✅
 

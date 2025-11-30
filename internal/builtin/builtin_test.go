@@ -261,3 +261,167 @@ func TestWhich(t *testing.T) {
 	}
 }
 
+func TestHead(t *testing.T) {
+	// 创建临时文件
+	testFile := filepath.Join(os.TempDir(), "gobash_test_head.txt")
+	defer os.Remove(testFile)
+	
+	content := "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11"
+	err := os.WriteFile(testFile, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("创建测试文件失败: %v", err)
+	}
+	
+	// 测试head命令（默认10行）
+	err = head([]string{testFile}, make(map[string]string))
+	if err != nil {
+		t.Errorf("head命令执行失败: %v", err)
+	}
+	
+	// 测试head -n 5
+	err = head([]string{"-n", "5", testFile}, make(map[string]string))
+	if err != nil {
+		t.Errorf("head -n 5命令执行失败: %v", err)
+	}
+}
+
+func TestTail(t *testing.T) {
+	// 创建临时文件
+	testFile := filepath.Join(os.TempDir(), "gobash_test_tail.txt")
+	defer os.Remove(testFile)
+	
+	content := "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11"
+	err := os.WriteFile(testFile, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("创建测试文件失败: %v", err)
+	}
+	
+	// 测试tail命令（默认10行）
+	err = tail([]string{testFile}, make(map[string]string))
+	if err != nil {
+		t.Errorf("tail命令执行失败: %v", err)
+	}
+	
+	// 测试tail -n 5
+	err = tail([]string{"-n", "5", testFile}, make(map[string]string))
+	if err != nil {
+		t.Errorf("tail -n 5命令执行失败: %v", err)
+	}
+}
+
+func TestWc(t *testing.T) {
+	// 创建临时文件
+	testFile := filepath.Join(os.TempDir(), "gobash_test_wc.txt")
+	defer os.Remove(testFile)
+	
+	content := "hello world\nthis is a test\n"
+	err := os.WriteFile(testFile, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("创建测试文件失败: %v", err)
+	}
+	
+	// 测试wc命令
+	err = wc([]string{testFile}, make(map[string]string))
+	if err != nil {
+		t.Errorf("wc命令执行失败: %v", err)
+	}
+	
+	// 测试wc -l
+	err = wc([]string{"-l", testFile}, make(map[string]string))
+	if err != nil {
+		t.Errorf("wc -l命令执行失败: %v", err)
+	}
+}
+
+func TestGrep(t *testing.T) {
+	// 创建临时文件
+	testFile := filepath.Join(os.TempDir(), "gobash_test_grep.txt")
+	defer os.Remove(testFile)
+	
+	content := "hello world\nthis is a test\nhello again\n"
+	err := os.WriteFile(testFile, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("创建测试文件失败: %v", err)
+	}
+	
+	// 测试grep命令
+	err = grep([]string{"hello", testFile}, make(map[string]string))
+	if err != nil {
+		t.Errorf("grep命令执行失败: %v", err)
+	}
+	
+	// 测试grep -i（忽略大小写）
+	err = grep([]string{"-i", "HELLO", testFile}, make(map[string]string))
+	if err != nil {
+		t.Errorf("grep -i命令执行失败: %v", err)
+	}
+}
+
+func TestSort(t *testing.T) {
+	// 创建临时文件
+	testFile := filepath.Join(os.TempDir(), "gobash_test_sort.txt")
+	defer os.Remove(testFile)
+	
+	content := "zebra\napple\nbanana\n"
+	err := os.WriteFile(testFile, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("创建测试文件失败: %v", err)
+	}
+	
+	// 测试sort命令
+	err = sortCmd([]string{testFile}, make(map[string]string))
+	if err != nil {
+		t.Errorf("sort命令执行失败: %v", err)
+	}
+	
+	// 测试sort -r（反向排序）
+	err = sortCmd([]string{"-r", testFile}, make(map[string]string))
+	if err != nil {
+		t.Errorf("sort -r命令执行失败: %v", err)
+	}
+}
+
+func TestUniq(t *testing.T) {
+	// 创建临时文件
+	testFile := filepath.Join(os.TempDir(), "gobash_test_uniq.txt")
+	defer os.Remove(testFile)
+	
+	content := "apple\napple\nbanana\nbanana\ncherry\n"
+	err := os.WriteFile(testFile, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("创建测试文件失败: %v", err)
+	}
+	
+	// 测试uniq命令
+	err = uniq([]string{testFile}, make(map[string]string))
+	if err != nil {
+		t.Errorf("uniq命令执行失败: %v", err)
+	}
+}
+
+func TestCut(t *testing.T) {
+	// 创建临时文件
+	testFile := filepath.Join(os.TempDir(), "gobash_test_cut.txt")
+	defer os.Remove(testFile)
+	
+	content := "apple,banana,cherry\none,two,three\n"
+	err := os.WriteFile(testFile, []byte(content), 0644)
+	if err != nil {
+		t.Fatalf("创建测试文件失败: %v", err)
+	}
+	
+	// 测试cut命令
+	err = cut([]string{"-d", ",", "-f", "1", testFile}, make(map[string]string))
+	if err != nil {
+		t.Errorf("cut命令执行失败: %v", err)
+	}
+}
+
+func TestClear(t *testing.T) {
+	// 测试clear命令
+	err := clear([]string{}, make(map[string]string))
+	if err != nil {
+		t.Errorf("clear命令执行失败: %v", err)
+	}
+}
+
