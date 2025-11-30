@@ -37,6 +37,9 @@ const (
 	// 变量
 	DOLLAR // $
 	VAR    // $VAR 或 ${VAR}
+	
+	// 命令替换
+	COMMAND_SUBSTITUTION // `command` 或 $(command)
 
 	// 括号和分组
 	LPAREN   // (

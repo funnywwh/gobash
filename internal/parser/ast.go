@@ -171,3 +171,13 @@ func (v *Variable) String() string {
 	return "$" + v.Name
 }
 
+// CommandSubstitution 命令替换
+type CommandSubstitution struct {
+	Command string
+}
+
+func (cs *CommandSubstitution) expressionNode() {}
+func (cs *CommandSubstitution) String() string {
+	return "$(" + cs.Command + ")"
+}
+

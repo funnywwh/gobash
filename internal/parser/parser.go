@@ -137,6 +137,7 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 		   p.curToken.Type == lexer.STRING_DOUBLE ||
 		   p.curToken.Type == lexer.VAR ||
 		   p.curToken.Type == lexer.DOLLAR ||
+		   p.curToken.Type == lexer.COMMAND_SUBSTITUTION ||
 		   p.curToken.Type == lexer.NUMBER {
 			stmt.Args = append(stmt.Args, p.parseExpression())
 		}
@@ -215,6 +216,8 @@ func (p *Parser) parseExpression() Expression {
 		return &StringLiteral{Value: p.curToken.Literal, IsQuote: isQuote}
 	case lexer.VAR:
 		return &Variable{Name: p.curToken.Literal}
+	case lexer.COMMAND_SUBSTITUTION:
+		return &CommandSubstitution{Command: p.curToken.Literal}
 	case lexer.DOLLAR:
 		// 处理特殊变量，如 $?
 		p.nextToken()

@@ -112,11 +112,22 @@ func (l *Lexer) NextToken() Token {
 		tok = l.readString('"')
 		tok.Type = STRING_DOUBLE
 	case '`':
-		tok = l.readString('`')
+		tok = l.readCommandSubstitution()
 	case '\\':
 		tok = newToken(ESCAPE, l.ch, tok.Line, tok.Column)
 	case '$':
-		tok = l.readVariable()
+		// 检查是否是 $(command) 格式的命令替换
+		if l.peekChar() == '(' {
+			startLine := l.line
+			startColumn := l.column
+			l.readChar() // 跳过 $
+			l.readChar() // 跳过 (
+			tok = l.readCommandSubstitutionParen()
+			tok.Line = startLine
+			tok.Column = startColumn
+		} else {
+			tok = l.readVariable()
+		}
 	case 0:
 		tok.Literal = ""
 		tok.Type = EOF
@@ -336,6 +347,86 @@ func (l *Lexer) readString(quote byte) Token {
 		Literal: result,
 		Line:    startLine,
 		Column:  startColumn,
+	}
+}
+
+// readCommandSubstitution 读取命令替换（反引号）
+func (l *Lexer) readCommandSubstitution() Token {
+	startLine := l.line
+	startColumn := l.column
+	l.readChar() // 跳过开始的反引号
+	
+	var literal strings.Builder
+	for l.ch != '`' && l.ch != 0 {
+		if l.ch == '\\' {
+			// 转义字符
+			l.readChar()
+			if l.ch != 0 {
+				literal.WriteByte(l.ch)
+				l.readChar()
+			}
+		} else {
+			literal.WriteByte(l.ch)
+			l.readChar()
+		}
+	}
+	
+	var result string
+	if l.ch == '`' {
+		result = literal.String()
+		l.readChar() // 跳过结束反引号
+	} else {
+		// 未闭合的反引号
+		result = literal.String()
+	}
+	
+	return Token{
+		Type:    COMMAND_SUBSTITUTION,
+		Literal: result,
+		Line:    startLine,
+		Column:  startColumn,
+	}
+}
+
+// readCommandSubstitutionParen 读取命令替换（$(command)格式）
+func (l *Lexer) readCommandSubstitutionParen() Token {
+	var literal strings.Builder
+	depth := 1 // 已经有一个开括号
+	
+	for depth > 0 && l.ch != 0 {
+		if l.ch == '(' {
+			depth++
+			literal.WriteByte(l.ch)
+			l.readChar()
+		} else if l.ch == ')' {
+			depth--
+			if depth > 0 {
+				literal.WriteByte(l.ch)
+			}
+			if depth == 0 {
+				l.readChar() // 跳过结束括号
+				break
+			}
+			l.readChar()
+		} else if l.ch == '\\' {
+			// 转义字符
+			literal.WriteByte(l.ch)
+			l.readChar()
+			if l.ch != 0 {
+				literal.WriteByte(l.ch)
+				l.readChar()
+			}
+		} else {
+			literal.WriteByte(l.ch)
+			l.readChar()
+		}
+	}
+	
+	return Token{
+		Type:    COMMAND_SUBSTITUTION,
+		Literal: literal.String(),
+		Line:    l.line,
+		Column:  l.column,
 	}
 }
 

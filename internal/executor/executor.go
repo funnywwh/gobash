@@ -2,10 +2,12 @@ package executor
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"gobash/internal/builtin"
+	"gobash/internal/lexer"
 	"gobash/internal/parser"
 )
 
@@ -519,6 +521,9 @@ func (e *Executor) evaluateExpression(expr parser.Expression) string {
 			return "__UNDEFINED_VAR__" + ex.Name
 		}
 		return ""
+	case *parser.CommandSubstitution:
+		// 执行命令替换
+		return e.executeCommandSubstitution(ex.Command)
 	default:
 		return ""
 	}
@@ -660,6 +665,69 @@ func (e *Executor) executeFunction(fn *parser.FunctionStatement, args []parser.E
 	delete(e.env, "@")
 
 	return err
+}
+
+// executeCommandSubstitution 执行命令替换
+func (e *Executor) executeCommandSubstitution(command string) string {
+	// 解析和执行命令
+	l := lexer.New(command)
+	p := parser.New(l)
+	program := p.ParseProgram()
+	
+	if len(p.Errors()) > 0 {
+		return ""
+	}
+	
+	// 捕获输出
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		return ""
+	}
+	os.Stdout = w
+	
+	// 在goroutine中执行，避免阻塞
+	done := make(chan bool)
+	var output strings.Builder
+	
+	go func() {
+		// 读取输出
+		buf := make([]byte, 1024)
+		for {
+			n, readErr := r.Read(buf)
+			if n > 0 {
+				output.Write(buf[:n])
+			}
+			if readErr == io.EOF {
+				break
+			}
+			if readErr != nil {
+				break
+			}
+		}
+		r.Close()
+		done <- true
+	}()
+	
+	// 执行命令
+	execErr := e.Execute(program)
+	
+	w.Close()
+	os.Stdout = oldStdout
+	
+	// 等待读取完成
+	<-done
+	
+	if execErr != nil {
+		return ""
+	}
+	
+	result := output.String()
+	// 移除末尾的换行符（如果存在）
+	result = strings.TrimSuffix(result, "\n")
+	result = strings.TrimSuffix(result, "\r\n")
+	
+	return result
 }
 
 // splitEnv 分割环境变量字符串
