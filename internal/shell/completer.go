@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"github.com/chzyer/readline"
 )
 
 // Completer 实现readline的自动补全接口
@@ -134,7 +133,8 @@ func (c *Completer) completeVariables(prefix string) ([][]rune, int) {
 		parts := strings.SplitN(env, "=", 2)
 		if len(parts) > 0 {
 			key := parts[0]
-			if strings.HasPrefix(key, varName) {
+			if strings.HasPrefix(key, varName) && !seen[key] {
+				seen[key] = true
 				if strings.HasPrefix(prefix, "${") {
 					matches = append(matches, []rune("${"+key+"}"))
 				} else {
