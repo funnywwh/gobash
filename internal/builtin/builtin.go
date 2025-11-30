@@ -47,6 +47,8 @@ func init() {
 	builtins["head"] = head
 	builtins["tail"] = tail
 	builtins["wc"] = wc
+	builtins["grep"] = grep
+	builtins["sort"] = sortCmd
 }
 
 // GetBuiltins 获取所有内置命令
@@ -1224,5 +1226,327 @@ func wcPrint(showLines, showWords, showChars, showBytes bool, lines, words, char
 	}
 	
 	fmt.Println(result)
+}
+
+// grep 文本搜索（简化版）
+func grep(args []string, env map[string]string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("grep: 缺少操作数")
+	}
+	
+	// 解析参数
+	pattern := ""
+	files := []string{}
+	caseInsensitive := false
+	showLineNumbers := false
+	showOnlyMatches := false
+	
+	i := 0
+	for i < len(args) {
+		arg := args[i]
+		if strings.HasPrefix(arg, "-") {
+			// 解析选项
+			for _, ch := range arg[1:] {
+				switch ch {
+				case 'i':
+					caseInsensitive = true
+				case 'n':
+					showLineNumbers = true
+				case 'o':
+					showOnlyMatches = true
+				}
+			}
+		} else if pattern == "" {
+			pattern = arg
+		} else {
+			files = append(files, arg)
+		}
+		i++
+	}
+	
+	if pattern == "" {
+		return fmt.Errorf("grep: 缺少模式")
+	}
+	
+	// 如果没有指定文件，从stdin读取
+	if len(files) == 0 {
+		return grepFromStdin(pattern, caseInsensitive, showLineNumbers, showOnlyMatches, "")
+	}
+	
+	// 处理多个文件
+	for i, file := range files {
+		if len(files) > 1 {
+			if i > 0 {
+				fmt.Println()
+			}
+		}
+		
+		if err := grepFromFile(file, pattern, caseInsensitive, showLineNumbers, showOnlyMatches, len(files) > 1); err != nil {
+			return err
+		}
+	}
+	
+	return nil
+}
+
+// grepFromFile 从文件搜索
+func grepFromFile(filename string, pattern string, caseInsensitive, showLineNumbers, showOnlyMatches, showFilename bool) error {
+	file, err := os.Open(filename)
+	if err != nil {
+		return fmt.Errorf("grep: %v", err)
+	}
+	defer file.Close()
+	
+	searchPattern := pattern
+	if caseInsensitive {
+		searchPattern = strings.ToLower(pattern)
+	}
+	
+	scanner := bufio.NewScanner(file)
+	lineNum := 0
+	
+	for scanner.Scan() {
+		lineNum++
+		line := scanner.Text()
+		searchLine := line
+		if caseInsensitive {
+			searchLine = strings.ToLower(line)
+		}
+		
+		if strings.Contains(searchLine, searchPattern) {
+			prefix := ""
+			if showFilename {
+				prefix = filename + ":"
+			}
+			if showLineNumbers {
+				if prefix != "" {
+					prefix += fmt.Sprintf("%d:", lineNum)
+				} else {
+					prefix = fmt.Sprintf("%d:", lineNum)
+				}
+			}
+			
+			if showOnlyMatches {
+				// 只显示匹配的部分
+				start := strings.Index(searchLine, searchPattern)
+				if start >= 0 {
+					match := line[start : start+len(pattern)]
+					if prefix != "" {
+						fmt.Printf("%s%s\n", prefix, match)
+					} else {
+						fmt.Println(match)
+					}
+				}
+			} else {
+				if prefix != "" {
+					fmt.Printf("%s%s\n", prefix, line)
+				} else {
+					fmt.Println(line)
+				}
+			}
+		}
+	}
+	
+	return scanner.Err()
+}
+
+// grepFromStdin 从stdin搜索
+func grepFromStdin(pattern string, caseInsensitive, showLineNumbers, showOnlyMatches bool, filename string) error {
+	searchPattern := pattern
+	if caseInsensitive {
+		searchPattern = strings.ToLower(pattern)
+	}
+	
+	scanner := bufio.NewScanner(os.Stdin)
+	lineNum := 0
+	
+	for scanner.Scan() {
+		lineNum++
+		line := scanner.Text()
+		searchLine := line
+		if caseInsensitive {
+			searchLine = strings.ToLower(line)
+		}
+		
+		if strings.Contains(searchLine, searchPattern) {
+			prefix := ""
+			if showLineNumbers {
+				prefix = fmt.Sprintf("%d:", lineNum)
+			}
+			
+			if showOnlyMatches {
+				// 只显示匹配的部分
+				start := strings.Index(searchLine, searchPattern)
+				if start >= 0 {
+					match := line[start : start+len(pattern)]
+					if prefix != "" {
+						fmt.Printf("%s%s\n", prefix, match)
+					} else {
+						fmt.Println(match)
+					}
+				}
+			} else {
+				if prefix != "" {
+					fmt.Printf("%s%s\n", prefix, line)
+				} else {
+					fmt.Println(line)
+				}
+			}
+		}
+	}
+	
+	return scanner.Err()
+}
+
+// sortCmd 排序（简化版）
+func sortCmd(args []string, env map[string]string) error {
+	reverse := false
+	numeric := false
+	unique := false
+	files := []string{}
+	
+	// 解析参数
+	i := 0
+	for i < len(args) {
+		arg := args[i]
+		if strings.HasPrefix(arg, "-") {
+			// 解析选项
+			for _, ch := range arg[1:] {
+				switch ch {
+				case 'r':
+					reverse = true
+				case 'n':
+					numeric = true
+				case 'u':
+					unique = true
+				}
+			}
+		} else {
+			files = append(files, arg)
+		}
+		i++
+	}
+	
+	// 如果没有指定文件，从stdin读取
+	if len(files) == 0 {
+		return sortFromStdin(reverse, numeric, unique)
+	}
+	
+	// 处理多个文件
+	allLines := []string{}
+	for _, file := range files {
+		lines, err := readLinesFromFile(file)
+		if err != nil {
+			return fmt.Errorf("sort: %v", err)
+		}
+		allLines = append(allLines, lines...)
+	}
+	
+	// 排序
+	sortedLines := sortLines(allLines, reverse, numeric, unique)
+	
+	// 输出
+	for _, line := range sortedLines {
+		fmt.Println(line)
+	}
+	
+	return nil
+}
+
+// sortFromStdin 从stdin排序
+func sortFromStdin(reverse, numeric, unique bool) error {
+	scanner := bufio.NewScanner(os.Stdin)
+	lines := []string{}
+	
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	
+	// 排序
+	sortedLines := sortLines(lines, reverse, numeric, unique)
+	
+	// 输出
+	for _, line := range sortedLines {
+		fmt.Println(line)
+	}
+	
+	return nil
+}
+
+// readLinesFromFile 从文件读取所有行
+func readLinesFromFile(filename string) ([]string, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	
+	scanner := bufio.NewScanner(file)
+	lines := []string{}
+	
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	
+	return lines, scanner.Err()
+}
+
+// sortLines 排序行
+func sortLines(lines []string, reverse, numeric, unique bool) []string {
+	// 去重
+	if unique {
+		seen := make(map[string]bool)
+		uniqueLines := []string{}
+		for _, line := range lines {
+			if !seen[line] {
+				seen[line] = true
+				uniqueLines = append(uniqueLines, line)
+			}
+		}
+		lines = uniqueLines
+	}
+	
+	// 排序
+	if numeric {
+		sort.Slice(lines, func(i, j int) bool {
+			numI, errI := strconv.ParseFloat(lines[i], 64)
+			numJ, errJ := strconv.ParseFloat(lines[j], 64)
+			
+			if errI != nil && errJ != nil {
+				// 都不是数字，按字符串比较
+				if reverse {
+					return lines[i] > lines[j]
+				}
+				return lines[i] < lines[j]
+			}
+			if errI != nil {
+				// i不是数字，排在后面
+				return false
+			}
+			if errJ != nil {
+				// j不是数字，排在后面
+				return true
+			}
+			
+			// 都是数字，按数值比较
+			if reverse {
+				return numI > numJ
+			}
+			return numI < numJ
+		})
+	} else {
+		sort.Slice(lines, func(i, j int) bool {
+			if reverse {
+				return lines[i] > lines[j]
+			}
+			return lines[i] < lines[j]
+		})
+	}
+	
+	return lines
 }
 
