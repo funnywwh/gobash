@@ -50,6 +50,7 @@ func init() {
 	builtins["grep"] = grep
 	builtins["sort"] = sortCmd
 	builtins["uniq"] = uniq
+	builtins["cut"] = cut
 }
 
 // GetBuiltins 获取所有内置命令
