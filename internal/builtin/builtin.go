@@ -1551,3 +1551,157 @@ func sortLines(lines []string, reverse, numeric, unique bool) []string {
 	return lines
 }
 
+// uniq 去重（简化版）
+func uniq(args []string, env map[string]string) error {
+	count := false
+	showOnlyDuplicates := false
+	ignoreCase := false
+	files := []string{}
+	
+	// 解析参数
+	i := 0
+	for i < len(args) {
+		arg := args[i]
+		if strings.HasPrefix(arg, "-") {
+			// 解析选项
+			for _, ch := range arg[1:] {
+				switch ch {
+				case 'c':
+					count = true
+				case 'd':
+					showOnlyDuplicates = true
+				case 'i':
+					ignoreCase = true
+				}
+			}
+		} else {
+			files = append(files, arg)
+		}
+		i++
+	}
+	
+	// 如果没有指定文件，从stdin读取
+	if len(files) == 0 {
+		return uniqFromStdin(count, showOnlyDuplicates, ignoreCase)
+	}
+	
+	// 处理多个文件
+	for _, file := range files {
+		if err := uniqFromFile(file, count, showOnlyDuplicates, ignoreCase); err != nil {
+			return err
+		}
+	}
+	
+	return nil
+}
+
+// uniqFromFile 从文件去重
+func uniqFromFile(filename string, count, showOnlyDuplicates, ignoreCase bool) error {
+	file, err := os.Open(filename)
+	if err != nil {
+		return fmt.Errorf("uniq: %v", err)
+	}
+	defer file.Close()
+	
+	scanner := bufio.NewScanner(file)
+	prevLine := ""
+	prevLineCount := 0
+	lineNum := 0
+	
+	for scanner.Scan() {
+		lineNum++
+		line := scanner.Text()
+		compareLine := line
+		comparePrev := prevLine
+		
+		if ignoreCase {
+			compareLine = strings.ToLower(line)
+			comparePrev = strings.ToLower(prevLine)
+		}
+		
+		if compareLine == comparePrev {
+			// 重复行
+			prevLineCount++
+		} else {
+			// 新行，先输出前一行（如果有）
+			if prevLine != "" {
+				if !showOnlyDuplicates || prevLineCount > 0 {
+					output := ""
+					if count {
+						output = fmt.Sprintf("%7d ", prevLineCount+1)
+					}
+					output += prevLine
+					fmt.Println(output)
+				}
+			}
+			prevLine = line
+			prevLineCount = 0
+		}
+	}
+	
+	// 输出最后一行
+	if prevLine != "" {
+		if !showOnlyDuplicates || prevLineCount > 0 {
+			output := ""
+			if count {
+				output = fmt.Sprintf("%7d ", prevLineCount+1)
+			}
+			output += prevLine
+			fmt.Println(output)
+		}
+	}
+	
+	return scanner.Err()
+}
+
+// uniqFromStdin 从stdin去重
+func uniqFromStdin(count, showOnlyDuplicates, ignoreCase bool) error {
+	scanner := bufio.NewScanner(os.Stdin)
+	prevLine := ""
+	prevLineCount := 0
+	
+	for scanner.Scan() {
+		line := scanner.Text()
+		compareLine := line
+		comparePrev := prevLine
+		
+		if ignoreCase {
+			compareLine = strings.ToLower(line)
+			comparePrev = strings.ToLower(prevLine)
+		}
+		
+		if compareLine == comparePrev {
+			// 重复行
+			prevLineCount++
+		} else {
+			// 新行，先输出前一行（如果有）
+			if prevLine != "" {
+				if !showOnlyDuplicates || prevLineCount > 0 {
+					output := ""
+					if count {
+						output = fmt.Sprintf("%7d ", prevLineCount+1)
+					}
+					output += prevLine
+					fmt.Println(output)
+				}
+			}
+			prevLine = line
+			prevLineCount = 0
+		}
+	}
+	
+	// 输出最后一行
+	if prevLine != "" {
+		if !showOnlyDuplicates || prevLineCount > 0 {
+			output := ""
+			if count {
+				output = fmt.Sprintf("%7d ", prevLineCount+1)
+			}
+			output += prevLine
+			fmt.Println(output)
+		}
+	}
+	
+	return scanner.Err()
+}
+
