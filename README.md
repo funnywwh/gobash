@@ -16,6 +16,7 @@
 - ✅ 命令替换（`$(command)` 和 `` `command` ``）
 - ✅ 算术展开（`$((expr))`）
 - ✅ 数组支持（`arr=(1 2 3)`，数组访问 `${arr[0]}`）
+- ✅ 关联数组（`declare -A arr`，`arr[key]=value`，`${arr[key]}`）
 - ✅ 控制流语句（if/else, for, while）
 - ✅ 函数定义和调用（支持参数传递）
 - ✅ 作业控制（后台任务、jobs、fg、bg命令）
@@ -264,6 +265,33 @@ $ for i in $arr; do
 5
 ```
 
+### 关联数组
+
+```bash
+# 声明关联数组
+$ declare -A arr
+
+# 关联数组赋值
+$ arr[hello]=world
+$ arr[foo]=bar
+$ arr[number]=123
+
+# 关联数组访问
+$ echo ${arr[hello]}
+world
+$ echo ${arr[foo]}
+bar
+
+# 在字符串中使用关联数组
+$ echo "Key 'hello' has value: ${arr[hello]}"
+Key 'hello' has value: world
+
+# 使用变量作为键
+$ key="foo"
+$ echo ${arr[$key]}
+bar
+```
+
 ### 控制流
 
 ```bash
@@ -480,7 +508,7 @@ gobash/
 - [x] 命令自动补全功能（Tab键补全命令、文件名、变量名）
 - [x] 作业控制（后台任务、fg, bg, jobs）
 - [x] 数组支持（`arr=(1 2 3)`，数组访问）
-- [ ] 关联数组（`declare -A arr`）
+- [x] 关联数组（`declare -A arr`，`arr[key]=value`，`${arr[key]}`）
 - [ ] 进程替换（`<(command)`, `>(command)`）
 - [x] 更多内置命令（head, tail, wc, grep, sort, uniq, cut）
 - [x] 更多测试用例和文档（示例脚本和使用文档）

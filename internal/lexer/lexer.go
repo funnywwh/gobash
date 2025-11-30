@@ -175,6 +175,37 @@ func (l *Lexer) NextToken() Token {
 				tok.Column = l.column
 				return tok
 			}
+			// 检查是否是数组元素赋值 arr[key]=value 或 arr[0]=value
+			// 如果下一个字符是 [，读取直到 ]，然后检查是否是 =
+			if l.ch == '[' {
+				// 读取 [key] 或 [0]
+				bracketPart := "["
+				l.readChar() // 跳过 [
+				for l.ch != ']' && l.ch != 0 && l.ch != '\n' {
+					bracketPart += string(l.ch)
+					l.readChar()
+				}
+				if l.ch == ']' {
+					bracketPart += "]"
+					l.readChar() // 跳过 ]
+					// 检查下一个字符是否是 =
+					if l.ch == '=' {
+						// 这是数组元素赋值 arr[key]= 或 arr[0]=
+						tok.Literal = ident + bracketPart + "="
+						tok.Type = IDENTIFIER
+						tok.Line = l.line
+						tok.Column = l.column
+						l.readChar() // 跳过 =
+						return tok
+					}
+					// 不是赋值，只是数组访问，将 [key] 作为标识符的一部分
+					tok.Literal = ident + bracketPart
+					tok.Type = IDENTIFIER
+					tok.Line = l.line
+					tok.Column = l.column
+					return tok
+				}
+			}
 			// 检查是否是数组赋值 arr=(...)
 			// 如果下一个字符是 = 且再下一个字符是 (，将 = 包含在标识符中
 			if l.ch == '=' && l.peekChar() == '(' {
