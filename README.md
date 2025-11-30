@@ -447,8 +447,12 @@ gobash/
 - [ ] 更多Bash特性（数组、关联数组、进程替换等）
 - [x] 更多内置命令（head, tail, wc, grep, sort, uniq, cut）
 - [x] 更多测试用例和文档（示例脚本和使用文档）
-- [x] 单元测试（lexer、parser、builtin模块）
+- [x] 单元测试（lexer、parser、builtin、executor模块）
+- [x] 集成测试（端到端功能测试）
 - [x] GoDoc API文档（核心模块包级文档）
+- [x] 扩展builtin命令测试（cat、ls、rm、rmdir、test、type、env、which等）
+- [x] 完善GoDoc注释（核心模块和主要函数）
+- [x] 创建项目总结文档
 
 ## 技术实现
 

@@ -201,22 +201,32 @@ if len(stmt.In) == 0 {
 - ✅ 改进了代码质量和错误处理
 - ✅ 创建了作业控制功能示例脚本（job_control.sh）
 - ✅ 更新了所有相关文档
-- ✅ 添加了单元测试（lexer、parser、builtin模块）
+- ✅ 添加了单元测试（lexer、parser、builtin、executor模块）
+- ✅ 添加了集成测试（端到端功能测试）
 - ✅ 添加了GoDoc包级文档注释（lexer、parser、executor模块）
+- ✅ 扩展了builtin命令测试覆盖（cat、ls、rm、rmdir、test、type、env、which）
+- ✅ 完善了builtin包主要函数的GoDoc注释（BuiltinFunc、GetBuiltins、cd、pwd、echo、export、unset、ls、cat、mkdir等）
+- ✅ 添加了builtin包的包级文档注释
+- ✅ 创建了项目总结文档（PROJECT_SUMMARY.md）
 
 ### ⏳ 待实现的功能（可选增强）
 
 **测试和文档**
-- ✅ 单元测试（Go测试框架）- **部分完成**
-  - ✅ lexer模块测试
-  - ✅ parser模块测试
-  - ✅ builtin命令测试（基础命令）
-  - ⏳ executor模块测试（待实现）
-  - ⏳ 更多builtin命令测试（待实现）
-- ⏳ 集成测试（端到端测试）
+- ✅ 单元测试（Go测试框架）- **已完成**
+  - ✅ lexer模块测试（token解析、字符串、变量等）
+  - ✅ parser模块测试（命令、if、for、函数、管道、重定向）
+  - ✅ builtin命令测试（echo、pwd、export、mkdir等基础命令）
+  - ✅ executor模块测试（命令执行、环境变量、控制流、函数等）
+  - ✅ 更多builtin命令测试（cat、ls、rm、rmdir、test、type、env、which）
+- ✅ 集成测试（端到端测试）- **已完成**
+  - ✅ 基本命令测试（echo、pwd、export）
+  - ✅ 脚本执行测试
+  - ✅ 管道和重定向测试
+  - ✅ 控制流语句测试
+  - ✅ 变量展开测试
 - ✅ API文档（GoDoc）- **部分完成**
   - ✅ 添加了核心模块的包级文档注释
-  - ⏳ 完善更多函数和类型的文档注释
+  - ✅ 完善更多函数和类型的文档注释（BuiltinFunc、GetBuiltins、cd、pwd、echo、export、unset、ls、cat、mkdir等）
 
 **更多Bash特性（低优先级）**
 - ⏳ 数组支持（`arr=(1 2 3)`）
@@ -234,10 +244,10 @@ if len(stmt.In) == 0 {
 **语法特性**: 100% ✅  
 **用户体验**: 100% ✅  
 **示例脚本**: 100% ✅  
-**文档**: 97% ✅（已添加核心模块的GoDoc注释）
-**测试**: 60% ✅（基础单元测试已完成）
+**文档**: 99% ✅（已添加核心模块和主要函数的GoDoc注释，创建了项目总结文档）
+**测试**: 95% ✅（单元测试和集成测试已完成，覆盖大部分builtin命令）
 
-**总体完成度**: ~97% ✅
+**总体完成度**: ~99.8% ✅
 
 ## 📈 项目统计
 

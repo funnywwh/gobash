@@ -32,3 +32,13 @@ build/
 # History files
 *.history
 .gobash_history
+
+# Temporary test files
+*_test.txt
+test_*.txt
+redirect_test*.txt
+
+# Temporary directories created by tests
+C/
+internal/*/C/
+internal/*/Users*/

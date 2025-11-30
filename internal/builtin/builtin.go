@@ -1,3 +1,14 @@
+// Package builtin 提供所有内置命令的实现
+// 
+// 内置命令是shell的核心功能，包括：
+// - 目录操作：cd, pwd
+// - 文件操作：ls, cat, mkdir, rmdir, rm, touch, clear
+// - 文本处理：head, tail, wc, grep, sort, uniq, cut
+// - 环境变量：export, unset, env, set
+// - 控制命令：exit, alias, unalias, history, which, type, true, false, test
+// - 作业控制：jobs, fg, bg
+//
+// 所有内置命令都遵循 BuiltinFunc 函数签名，接收参数列表和环境变量映射。
 package builtin
 
 import (
@@ -14,6 +25,9 @@ import (
 )
 
 // BuiltinFunc 内置命令函数类型
+// 所有内置命令必须符合此函数签名
+// args: 命令参数列表
+// env: 环境变量映射，可以读取和修改环境变量
 type BuiltinFunc func(args []string, env map[string]string) error
 
 var builtins map[string]BuiltinFunc
@@ -57,11 +71,15 @@ func init() {
 }
 
 // GetBuiltins 获取所有内置命令
+// 返回一个包含所有已注册内置命令的映射表
+// 键为命令名，值为对应的命令函数
 func GetBuiltins() map[string]BuiltinFunc {
 	return builtins
 }
 
-// cd 改变目录
+// cd 改变当前工作目录
+// 支持相对路径、绝对路径和~展开（用户主目录）
+// 如果没有参数，切换到用户主目录
 func cd(args []string, env map[string]string) error {
 	var dir string
 	if len(args) == 0 {
@@ -113,7 +131,8 @@ func cd(args []string, env map[string]string) error {
 	return nil
 }
 
-// pwd 打印当前工作目录
+// pwd 显示当前工作目录的绝对路径
+// 输出当前shell的工作目录
 func pwd(args []string, env map[string]string) error {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -123,7 +142,8 @@ func pwd(args []string, env map[string]string) error {
 	return nil
 }
 
-// echo 打印参数
+// echo 输出文本到标准输出
+// 将所有参数用空格连接后输出，最后换行
 func echo(args []string, env map[string]string) error {
 	if len(args) == 0 {
 		fmt.Println()
@@ -156,6 +176,8 @@ func exit(args []string, env map[string]string) error {
 }
 
 // export 导出环境变量
+// 将变量设置到环境变量中，格式为 KEY=VALUE
+// 支持多个变量同时设置
 func export(args []string, env map[string]string) error {
 	if len(args) == 0 {
 		// 显示所有导出的环境变量
@@ -182,6 +204,8 @@ func export(args []string, env map[string]string) error {
 }
 
 // unset 取消设置环境变量
+// 从环境变量映射中删除指定的变量
+// 支持同时删除多个变量
 func unset(args []string, env map[string]string) error {
 	for _, arg := range args {
 		delete(env, arg)
@@ -325,6 +349,8 @@ func printFileInfo(info os.FileInfo, name string) {
 }
 
 // cat 显示文件内容
+// 将指定文件的内容输出到标准输出
+// 支持多个文件，会依次显示
 func cat(args []string, env map[string]string) error {
 	if len(args) == 0 {
 		// 从stdin读取
@@ -360,6 +386,8 @@ func cat(args []string, env map[string]string) error {
 }
 
 // mkdir 创建目录
+// 支持 -p 选项创建父目录（如果不存在）
+// 支持同时创建多个目录
 func mkdir(args []string, env map[string]string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("mkdir: 缺少操作数")
