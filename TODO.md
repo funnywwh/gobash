@@ -55,9 +55,13 @@ if len(stmt.In) == 0 {
 
 ## 🟡 可选增强功能（README中列出）
 
-### 1. 箭头键浏览历史
-**状态**: 未实现
-**需求**: 需要readline库支持（如 `github.com/chzyer/readline`）
+### 1. ✅ 箭头键浏览历史 - **已完成**
+**状态**: 已实现
+**实现**: 使用 `github.com/chzyer/readline` 库
+**功能**: 
+- 支持 ↑↓ 键浏览历史命令
+- 自动保存历史到 ~/.gobash_history
+- 如果readline不可用，自动回退到简单模式
 **优先级**: 中
 **难度**: ⭐⭐⭐ 需要外部库集成
 
