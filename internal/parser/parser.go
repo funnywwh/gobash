@@ -122,27 +122,26 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 		p.curToken.Type != lexer.DONE &&
 		p.curToken.Type != lexer.FI &&
 		p.curToken.Type != lexer.ELSE &&
-		p.curToken.Type != lexer.ELIF &&
-		p.curToken.Type != lexer.RBRACKET { // [ 命令需要处理 ]
+		p.curToken.Type != lexer.ELIF {
 		
-		// 检查重定向
-		if p.curToken.Type == lexer.REDIRECT_OUT ||
-			p.curToken.Type == lexer.REDIRECT_IN ||
-			p.curToken.Type == lexer.REDIRECT_APPEND {
-			redirect := p.parseRedirect()
-			if redirect != nil {
-				stmt.Redirects = append(stmt.Redirects, redirect)
-			}
-			p.nextToken()
-			continue
-		}
-
 		// 检查是否是 [ 命令的结束括号
 		if p.curToken.Type == lexer.RBRACKET {
 			// 将 ] 作为参数添加（test命令需要它）
 			stmt.Args = append(stmt.Args, &Identifier{Value: "]"})
 			p.nextToken()
 			break
+		}
+		
+		// 检查重定向
+		if p.curToken.Type == lexer.REDIRECT_OUT ||
+		   p.curToken.Type == lexer.REDIRECT_IN ||
+		   p.curToken.Type == lexer.REDIRECT_APPEND {
+			redirect := p.parseRedirect()
+			if redirect != nil {
+				stmt.Redirects = append(stmt.Redirects, redirect)
+			}
+			p.nextToken()
+			continue
 		}
 		
 		// 解析参数
