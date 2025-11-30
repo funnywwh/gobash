@@ -2,36 +2,40 @@
 
 ## 🔴 代码中的TODO项（需要修复/完善）
 
-### 1. exit命令的退出码解析
+### 1. ✅ exit命令的退出码解析 - **已完成**
 **位置**: `internal/builtin/builtin.go:127`
-**问题**: 当前exit命令虽然接受参数，但不解析退出码，总是以0退出
-**影响**: `exit 1` 和 `exit 0` 效果相同
-**修复难度**: ⭐ 简单
+**状态**: 已修复，现在可以正确解析退出码
+**修复内容**: 使用 `strconv.Atoi` 解析退出码参数
 
 ```go
-// 当前代码
+// 修复后的代码
 func exit(args []string, env map[string]string) error {
     code := 0
     if len(args) > 0 {
-        // TODO: 解析退出码
-        code = 0
+        if parsed, err := strconv.Atoi(args[0]); err == nil {
+            code = parsed
+        }
     }
     os.Exit(code)
     return nil
 }
 ```
 
-### 2. for循环的位置参数支持
+### 2. ✅ for循环的位置参数支持 - **已完成**
 **位置**: `internal/executor/executor.go:357`
-**问题**: `for i; do ... done` 格式（使用位置参数）未实现
-**影响**: 不支持Bash中常见的 `for i; do` 语法
-**修复难度**: ⭐⭐ 中等
+**状态**: 已实现，支持 `for i; do ... done` 语法
+**修复内容**: 从环境变量中读取位置参数（$1, $2, ...）并遍历
 
 ```go
-// 当前代码
+// 修复后的代码
 if len(stmt.In) == 0 {
-    // TODO: 实现位置参数
-    return nil
+    // 从环境变量中获取位置参数
+    argCount := 0
+    if countStr, ok := e.env["#"]; ok {
+        fmt.Sscanf(countStr, "%d", &argCount)
+    }
+    // 遍历位置参数并执行循环体
+    ...
 }
 ```
 
