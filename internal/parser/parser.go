@@ -337,6 +337,7 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 		
 		// 在移动到下一个token之前，检查下一个token是否是换行符或语句结束标记
 		// 如果是，停止解析参数（换行符是语句分隔符）
+		// 注意：需要检查peekToken，因为curToken可能仍然是当前参数
 		if p.peekToken.Type == lexer.NEWLINE ||
 		   p.peekToken.Type == lexer.SEMICOLON ||
 		   p.peekToken.Type == lexer.FI ||
@@ -345,6 +346,20 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 		   p.peekToken.Type == lexer.ELIF ||
 		   p.peekToken.Type == lexer.ESAC {
 			break
+		}
+		
+		// 如果下一个token是标识符（可能是下一个命令），且当前已经解析了至少一个参数，停止解析
+		// 这可以防止将下一个命令解析为当前命令的参数
+		if p.peekToken.Type == lexer.IDENTIFIER && len(stmt.Args) > 0 {
+			// 检查是否是关键字（这些不应该被解析为参数）
+			peekLiteral := p.peekToken.Literal
+			if peekLiteral == "echo" || peekLiteral == "exit" || peekLiteral == "if" ||
+			   peekLiteral == "then" || peekLiteral == "else" || peekLiteral == "elif" ||
+			   peekLiteral == "fi" || peekLiteral == "for" || peekLiteral == "while" ||
+			   peekLiteral == "do" || peekLiteral == "done" || peekLiteral == "case" ||
+			   peekLiteral == "esac" {
+				break
+			}
 		}
 		
 		p.nextToken()
