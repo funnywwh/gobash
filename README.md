@@ -4,13 +4,18 @@
 
 ## 功能特性
 
-- ✅ Bash脚本执行器
+- ✅ Bash脚本执行器（支持shebang和注释行）
 - ✅ 交互式Shell（REPL）
-- ✅ 基础命令支持（cd, pwd, echo, exit等）
-- ✅ 管道和重定向（|, >, <, >>）
-- ✅ 环境变量支持
+- ✅ 多行输入支持（以`\`结尾的命令）
+- ✅ 完整的命令历史（history命令，持久化存储）
+- ✅ 命令别名（alias/unalias）
+- ✅ 丰富的内置命令集（cd, pwd, echo, ls, cat, mkdir, rm等）
+- ✅ 管道和重定向（|, >, <, >>），支持内置命令重定向
+- ✅ 环境变量支持（单引号不展开，双引号展开变量）
 - ✅ 控制流语句（if/else, for, while）
-- ✅ 函数定义（基础支持）
+- ✅ 函数定义和调用（支持参数传递）
+- ✅ 增强的错误处理和提示
+- ✅ Windows平台优化
 
 ## 编译
 
@@ -105,14 +110,26 @@ hello
 ### 重定向
 
 ```bash
+# 输出重定向
 $ echo "test" > output.txt
 $ cat output.txt
 test
 
+# 追加重定向
 $ echo "append" >> output.txt
 $ cat output.txt
 test
 append
+
+# 输入重定向
+$ cat < output.txt
+test
+append
+
+# 内置命令也支持重定向
+$ echo "hello" > test.txt
+$ cat test.txt
+hello
 ```
 
 ### 环境变量
@@ -121,6 +138,22 @@ append
 $ export MYVAR=hello
 $ echo $MYVAR
 hello
+
+# 单引号字符串不展开变量
+$ echo '$MYVAR'
+$MYVAR
+
+# 双引号字符串展开变量
+$ echo "$MYVAR"
+hello
+
+# 支持转义的$符号
+$ echo "\$MYVAR is $MYVAR"
+$MYVAR is hello
+
+# 支持${VAR}格式
+$ echo "${MYVAR}world"
+helloworld
 ```
 
 ### 控制流
@@ -185,6 +218,38 @@ history -c
 
 历史记录会自动保存到 `~/.gobash_history` 文件，下次启动时会自动加载。
 
+### 多行输入
+
+```bash
+# 以反斜杠结尾的命令可以继续输入
+$ echo "Hello" \
+> "World"
+Hello World
+
+# 支持多行函数定义
+$ function test() { \
+> echo "line 1"; \
+> echo "line 2"; \
+> }
+$ test
+line 1
+line 2
+```
+
+### 脚本执行
+
+```bash
+# 执行脚本文件（自动跳过shebang行和注释行）
+$ gobash.exe script.sh
+
+# 脚本示例（script.sh）
+#!/bin/bash
+# 这是注释行
+echo "Hello from script"
+export VAR=value
+echo $VAR
+```
+
 ## 项目结构
 
 ```
@@ -205,23 +270,65 @@ gobash/
 
 ## 开发状态
 
-当前版本实现了基础的Bash兼容功能，包括：
+### ✅ 已完成功能
 
-- [x] 词法分析器
-- [x] 语法分析器
-- [x] 命令执行
-- [x] 管道和重定向
-- [x] 内置命令（cd, pwd, echo, ls, cat, mkdir, rm等）
+**核心功能**
+- [x] 词法分析器（支持字符串、变量、操作符等）
+- [x] 语法分析器（构建AST）
+- [x] 命令执行器（外部命令、内置命令、管道、重定向）
+- [x] 交互式Shell（REPL循环）
+
+**命令支持**
+- [x] 内置命令（cd, pwd, echo, exit, export, unset, env, set）
+- [x] 文件操作（ls, cat, mkdir, rmdir, rm, touch, clear）
+- [x] 别名管理（alias, unalias）
+- [x] 命令历史（history命令，持久化存储）
+
+**语法特性**
+- [x] 管道和重定向（|, >, <, >>），支持内置命令重定向
+- [x] 环境变量（单引号不展开，双引号展开变量，支持${VAR}格式）
 - [x] 控制流语句（if/else, for, while）
-- [x] 交互式Shell
-- [x] 多行输入支持（以\结尾）
-- [x] 错误处理和提示
-- [x] Windows平台优化
-- [x] 命令别名（alias/unalias）
-- [x] 函数定义和调用
-- [x] 命令历史（history命令，历史记录持久化）
-- [ ] 箭头键浏览历史（可选增强）
-- [ ] 自动补全
+- [x] 函数定义和调用（支持参数传递，$1, $2, $#, $@）
+- [x] 多行输入支持（以`\`结尾的命令）
+
+**脚本执行**
+- [x] 脚本文件执行（支持shebang行和注释行自动跳过）
+- [x] 命令字符串执行（-c参数）
+
+**平台支持**
+- [x] Windows平台优化（路径处理、环境变量）
+- [x] 跨平台兼容性
+
+**用户体验**
+- [x] 增强的错误处理和提示
+- [x] 命令历史持久化（~/.gobash_history）
+
+### 🔄 计划中的功能（可选增强）
+
+- [ ] 箭头键浏览历史（需要readline库支持）
+- [ ] 命令自动补全功能
+- [ ] 更多Bash特性（数组、关联数组、进程替换等）
+- [ ] 作业控制（后台任务、fg, bg, jobs）
+- [ ] 更多测试用例和文档
+
+## 技术实现
+
+### 架构设计
+
+项目采用模块化设计，主要组件包括：
+
+- **词法分析器（Lexer）**：将输入字符串分解为token序列
+- **语法分析器（Parser）**：构建抽象语法树（AST）
+- **执行器（Executor）**：解释执行AST，处理命令、管道、重定向
+- **内置命令（Builtin）**：实现常用shell命令
+- **Shell核心（Shell）**：管理REPL循环、别名、历史记录
+
+### 关键特性实现
+
+1. **字符串变量展开**：区分单引号和双引号，双引号内支持变量展开和转义
+2. **内置命令重定向**：通过临时替换os.Stdin/Stdout/Stderr实现
+3. **文件名解析**：正确处理包含点号、连字符等特殊字符的文件名
+4. **脚本执行**：自动识别并跳过shebang行和注释行
 
 ## 许可证
 
