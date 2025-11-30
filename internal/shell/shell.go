@@ -83,16 +83,13 @@ func (s *Shell) Run() {
 	}
 	defer rl.Close()
 
-	// 加载历史记录到readline
-	for _, cmd := range s.history.GetAll() {
-		rl.AddHistory(cmd)
-	}
+	// readline会自动从HistoryFile加载历史记录，无需手动添加
 
 	for s.running {
 		// 更新提示符
 		rl.SetPrompt(s.prompt)
 		
-		line, err := rl.ReadLine()
+		line, err := rl.Readline()
 		if err != nil {
 			if err == readline.ErrInterrupt {
 				// Ctrl+C，继续
@@ -112,7 +109,7 @@ func (s *Shell) Run() {
 		for strings.HasSuffix(line, "\\") {
 			line = strings.TrimSuffix(line, "\\")
 			rl.SetPrompt("> ")
-			nextLine, err := rl.ReadLine()
+			nextLine, err := rl.Readline()
 			if err != nil {
 				if err == readline.ErrInterrupt {
 					fmt.Println()
@@ -128,7 +125,8 @@ func (s *Shell) Run() {
 		} else {
 			// 成功执行的命令添加到历史记录
 			s.history.Add(line)
-			rl.AddHistory(line)
+			// 保存到readline历史记录
+			rl.SaveHistory(line)
 		}
 		
 		// 更新提示符（工作目录可能已改变）
