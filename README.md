@@ -83,6 +83,10 @@ gobash.exe -c "echo hello world"
 - `unalias [name]` - 取消设置别名
 - `history` - 显示命令历史
 - `history -c` - 清除命令历史
+- `which [命令...]` - 查找命令路径
+- `type [命令...]` - 显示命令类型（内置/外部）
+- `true` - 总是成功返回
+- `false` - 总是失败返回
 
 ## 示例
 
