@@ -235,7 +235,7 @@ func (s *Shell) ExecuteReader(reader io.Reader) error {
 	lineNum := 0
 	var currentStatement strings.Builder
 
-	for scanner.Scan() {
+		for scanner.Scan() {
 		lineNum++
 		originalLine := scanner.Text()
 		line := strings.TrimSpace(originalLine)
@@ -623,8 +623,10 @@ func splitCommands(line string) []string {
 	for i := 0; i < len(line); i++ {
 		ch := line[i]
 
-		if ch == '\\' && i+1 < len(line) {
-			// 转义字符
+		// 在引号内，转义字符应该保留（由 lexer 处理）
+		// 在引号外，转义字符用于转义分号等，需要处理
+		if ch == '\\' && i+1 < len(line) && !inQuotes {
+			// 转义字符（不在引号内）
 			current.WriteByte(line[i+1])
 			i++
 			continue

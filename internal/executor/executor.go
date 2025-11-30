@@ -1175,6 +1175,7 @@ func (e *Executor) evaluateExpression(expr parser.Expression) string {
 }
 
 // expandVariablesInString 展开字符串中的变量（如 "TEST=$TEST"）
+// 优先处理转义序列（如 \$），然后处理变量展开
 func (e *Executor) expandVariablesInString(s string) string {
 	// 如果字符串为空，直接返回
 	if len(s) == 0 {
@@ -1184,11 +1185,75 @@ func (e *Executor) expandVariablesInString(s string) string {
 	var result strings.Builder
 	i := 0
 	for i < len(s) {
-		if s[i] == '\\' && i+1 < len(s) && s[i+1] == '$' {
-			// 转义的 $，保留为 $
-			result.WriteByte('$')
-			i += 2
+		// 处理转义序列（除了 \$，\$ 留给变量展开处理）
+		if s[i] == '\\' && i+1 < len(s) {
+			escaped := s[i+1]
+			
+			if escaped == '$' {
+				// \$ 转义：保留 \，然后继续处理 $（会在下面的 $ 处理中检查前面是否有 \）
+				result.WriteByte('\\')
+				i++ // 只跳过 \，不跳过 $，让 $ 进入下面的处理
+			} else {
+				i += 2 // 跳过 \ 和转义字符
+				switch escaped {
+				case '\\':
+					// \\ 转义：输出单个 \
+					result.WriteByte('\\')
+				default:
+					// 其他转义序列（\n, \t等）保持字面量（两个字符）
+					result.WriteByte('\\')
+					result.WriteByte(escaped)
+				}
+			}
 		} else if s[i] == '$' && i+1 < len(s) {
+			// 检查 result 中最后一个字符是否是转义的 \
+			if result.Len() > 0 {
+				resultStr := result.String()
+				lastChar := resultStr[len(resultStr)-1]
+				if lastChar == '\\' {
+					// 前面有 \，这是转义的 $，删除 result 中的 \，输出字面量 $ 并跳过后面的变量名（不展开）
+					resultWithoutBackslash := resultStr[:len(resultStr)-1]
+					result.Reset()
+					result.WriteString(resultWithoutBackslash)
+					result.WriteByte('$')
+					i++ // 跳过 $，现在 i 指向 $ 后面的字符（比如 '1'）
+					// 跳过后面的变量名部分，但不展开
+					if i < len(s) {
+						// 处理特殊变量 $#, $@, $*, $?, $!, $$, $0
+						if s[i] == '#' || s[i] == '@' || s[i] == '*' || s[i] == '?' || s[i] == '!' || s[i] == '$' || s[i] == '0' {
+							result.WriteByte(s[i])
+							i++
+						} else if isDigit(s[i]) {
+							// $1, $2, ... 位置参数
+							for i < len(s) && isDigit(s[i]) {
+								result.WriteByte(s[i])
+								i++
+							}
+						} else if s[i] == '{' {
+							// ${VAR} 格式
+							result.WriteByte(s[i])
+							i++
+							for i < len(s) && s[i] != '}' {
+								result.WriteByte(s[i])
+								i++
+							}
+							if i < len(s) && s[i] == '}' {
+								result.WriteByte(s[i])
+								i++
+							}
+						} else if isLetter(s[i]) || s[i] == '_' {
+							// $VAR 格式
+							for i < len(s) && (isLetter(s[i]) || isDigit(s[i]) || s[i] == '_' || s[i] == '[' || s[i] == ']') {
+								result.WriteByte(s[i])
+								i++
+							}
+						}
+					}
+					continue
+				}
+			}
+			
+			// 前面没有 \，正常展开变量
 			// 处理变量展开
 			var varName strings.Builder
 			

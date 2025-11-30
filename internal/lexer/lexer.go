@@ -504,14 +504,31 @@ func (l *Lexer) readString(quote byte) Token {
 	startColumn := l.column
 	l.readChar() // 跳过开始的引号
 
+
 	var literal strings.Builder
 	for l.ch != quote && l.ch != 0 {
 		if quote == '"' && l.ch == '\\' {
 			// 双引号内允许转义
+			// 通用方法：只处理 \"，其他转义序列（包括 \$）都保持为两个字符
+			// 这样在 expandVariablesInString 中可以统一处理所有转义
 			l.readChar()
 			if l.ch != 0 {
-				literal.WriteByte(l.ch)
-				l.readChar()
+				if l.ch == '"' {
+					// \" 转义为 "
+					literal.WriteByte('"')
+					l.readChar()
+				} else {
+					// 其他转义序列（\$、\\、\n、\t等）保持为两个字符
+					// 注意：必须保留 \ 和转义字符，不能只保留转义字符
+					// 不特殊处理 \$，留给展开阶段处理
+					escapedChar := l.ch
+					literal.WriteByte('\\')
+					literal.WriteByte(escapedChar)
+					l.readChar()
+				}
+			} else {
+				// \ 后面没有字符，只写入 \
+				literal.WriteByte('\\')
 			}
 		} else if quote == '"' && l.ch == '$' {
 			// 双引号内需要保留 $ 以便后续展开变量
@@ -531,6 +548,10 @@ func (l *Lexer) readString(quote byte) Token {
 		// 未闭合的引号
 		result = literal.String()
 	}
+
+
+
+
 
 	return Token{
 		Type:    STRING,
