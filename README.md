@@ -70,6 +70,7 @@ gobash.exe -c "echo hello world"
 - `grep [-i] [-n] [-o] [模式] [文件...]` - 文本搜索（-i忽略大小写，-n显示行号，-o只显示匹配部分）
 - `sort [-r] [-n] [-u] [文件...]` - 排序（-r逆序，-n数值排序，-u去重）
 - `uniq [-c] [-d] [-i] [文件...]` - 去重（-c显示计数，-d只显示重复行，-i忽略大小写）
+- `cut -d [分隔符] -f [字段列表] [文件...]` - 剪切字段（-d指定分隔符，-f指定字段，支持范围如1-3）
 - `mkdir [-p] [目录...]` - 创建目录（-p创建父目录）
 - `rmdir [目录...]` - 删除空目录
 - `rm [-r] [-f] [文件/目录...]` - 删除文件或目录（-r递归，-f强制）
@@ -374,7 +375,7 @@ gobash/
 **命令支持**
 - [x] 内置命令（cd, pwd, echo, exit, export, unset, env, set）
 - [x] 文件操作（ls, cat, mkdir, rmdir, rm, touch, clear）
-- [x] 文本处理（head, tail, wc, grep, sort, uniq）
+- [x] 文本处理（head, tail, wc, grep, sort, uniq, cut）
 - [x] 别名管理（alias, unalias）
 - [x] 命令历史（history命令，持久化存储）
 
@@ -403,7 +404,7 @@ gobash/
 - [ ] 命令自动补全功能
 - [ ] 更多Bash特性（数组、关联数组、进程替换等）
 - [ ] 作业控制（后台任务、fg, bg, jobs）
-- [x] 更多内置命令（head, tail, wc, grep, sort, uniq）
+- [x] 更多内置命令（head, tail, wc, grep, sort, uniq, cut）
 - [ ] 更多测试用例和文档
 
 ## 技术实现
