@@ -230,9 +230,9 @@ if len(stmt.In) == 0 {
   - ✅ 完善更多函数和类型的文档注释（BuiltinFunc、GetBuiltins、cd、pwd、echo、export、unset、ls、cat、mkdir等）
 
 **更多Bash特性（低优先级）**
-- ⏳ 数组支持（`arr=(1 2 3)`）
-- ⏳ 关联数组（`declare -A arr`）
-- ⏳ 进程替换（`<(command)`, `>(command)`）
+- 🔄 数组支持（`arr=(1 2 3)`）- **进行中**（已实现基础框架：AST节点、executor存储、数组访问，正在调试lexer/parser解析逻辑）
+- ⬜ 关联数组（`declare -A arr`）
+- ⬜ 进程替换（`<(command)`, `>(command)`）
 
 ### ⚠️ 平台限制
 - ⚠️ Windows平台不支持 `Ctrl+Z` 信号处理（平台限制，无法实现）

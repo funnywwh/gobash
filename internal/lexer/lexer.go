@@ -115,6 +115,32 @@ func (l *Lexer) NextToken() Token {
 		tok = newToken(LBRACKET, l.ch, tok.Line, tok.Column)
 	case ']':
 		tok = newToken(RBRACKET, l.ch, tok.Line, tok.Column)
+	case '=':
+		// 检查是否是数组赋值 arr=(...)
+		// 如果下一个字符是 (，将 = 作为标识符的一部分
+		if l.peekChar() == '(' {
+			// 将 = 作为标识符的一部分，返回包含 = 的标识符
+			// 这样 arr= 会被识别为一个IDENTIFIER token
+			// 需要回退到标识符的开始位置
+			position := l.position
+			// 向前查找标识符的开始位置
+			for position > 0 {
+				prevChar := l.input[position-1]
+				if isLetter(prevChar) || isDigit(prevChar) || prevChar == '_' {
+					position--
+				} else {
+					break
+				}
+			}
+			// 读取包含 = 的标识符
+			tok.Literal = l.input[position:l.position+1]
+			tok.Type = IDENTIFIER
+			tok.Line = l.line
+			tok.Column = l.column
+			l.readChar() // 跳过 =
+			return tok
+		}
+		tok = newToken(ILLEGAL, l.ch, tok.Line, tok.Column) // = 单独出现时作为非法字符
 	case '\'':
 		tok = l.readString('\'')
 		tok.Type = STRING_SINGLE
@@ -240,7 +266,8 @@ func (l *Lexer) readIdentifierOrPath() string {
 		l.ch != '$' &&
 		l.ch != '\'' &&
 		l.ch != '"' &&
-		l.ch != '`' {
+		l.ch != '`' &&
+		l.ch != '=' { // 停止在 = 处，以便识别数组赋值
 		l.readChar()
 	}
 	return l.input[position:l.position]

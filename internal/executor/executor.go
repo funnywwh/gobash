@@ -17,6 +17,7 @@ import (
 // 负责解释执行AST，处理命令执行、管道、重定向、环境变量展开等功能
 type Executor struct {
 	env       map[string]string
+	arrays    map[string][]string // 数组存储：数组名 -> 元素列表
 	builtins  map[string]builtin.BuiltinFunc
 	functions map[string]*parser.FunctionStatement
 	options   map[string]bool // shell选项状态
@@ -27,6 +28,7 @@ type Executor struct {
 func New() *Executor {
 	e := &Executor{
 		env:       make(map[string]string),
+		arrays:    make(map[string][]string),
 		builtins:  builtin.GetBuiltins(),
 		functions: make(map[string]*parser.FunctionStatement),
 		options:   make(map[string]bool),
@@ -82,6 +84,8 @@ func (e *Executor) executeStatement(stmt parser.Statement) error {
 		return nil
 	case *parser.BlockStatement:
 		return e.executeBlock(s)
+	case *parser.ArrayAssignmentStatement:
+		return e.executeArrayAssignment(s)
 	default:
 		return fmt.Errorf("unknown statement type: %T", stmt)
 	}
@@ -505,6 +509,64 @@ func (e *Executor) executeBlock(block *parser.BlockStatement) error {
 	return nil
 }
 
+// executeArrayAssignment 执行数组赋值
+// 例如：arr=(1 2 3)
+func (e *Executor) executeArrayAssignment(stmt *parser.ArrayAssignmentStatement) error {
+	values := make([]string, 0, len(stmt.Values))
+	for _, expr := range stmt.Values {
+		value := e.evaluateExpression(expr)
+		values = append(values, value)
+	}
+	e.arrays[stmt.Name] = values
+	// 同时设置环境变量，使用特殊格式存储数组长度
+	e.env[stmt.Name+"_LENGTH"] = fmt.Sprintf("%d", len(values))
+	// 设置第一个元素为默认值（Bash行为）
+	if len(values) > 0 {
+		e.env[stmt.Name] = values[0]
+	}
+	return nil
+}
+
+// getArrayElement 获取数组元素
+// 支持 ${arr[0]} 和 $arr[0] 格式
+func (e *Executor) getArrayElement(varExpr string) string {
+	// 解析数组名和索引
+	// 格式：arr[0] 或 arr[1]
+	idx := strings.Index(varExpr, "[")
+	if idx == -1 {
+		return ""
+	}
+	arrName := varExpr[:idx]
+	idxEnd := strings.Index(varExpr, "]")
+	if idxEnd == -1 {
+		return ""
+	}
+	indexStr := varExpr[idx+1 : idxEnd]
+	
+	// 解析索引
+	index, err := strconv.Atoi(indexStr)
+	if err != nil {
+		return ""
+	}
+	
+	// 获取数组
+	arr, ok := e.arrays[arrName]
+	if !ok {
+		// 如果设置了 -u 选项，未定义的数组应该报错
+		if e.options["u"] {
+			return "__UNDEFINED_VAR__" + arrName
+		}
+		return ""
+	}
+	
+	// 检查索引范围
+	if index < 0 || index >= len(arr) {
+		return ""
+	}
+	
+	return arr[index]
+}
+
 // evaluateExpression 求值表达式
 func (e *Executor) evaluateExpression(expr parser.Expression) string {
 	switch ex := expr.(type) {
@@ -535,6 +597,14 @@ func (e *Executor) evaluateExpression(expr parser.Expression) string {
 		}
 		return ex.Value
 	case *parser.Variable:
+		// 检查是否是数组访问 ${arr[0]} 或 $arr[0]
+		if strings.Contains(ex.Name, "[") && strings.Contains(ex.Name, "]") {
+			return e.getArrayElement(ex.Name)
+		}
+		// 检查是否是数组变量（返回所有元素，空格分隔）
+		if arr, ok := e.arrays[ex.Name]; ok {
+			return strings.Join(arr, " ")
+		}
 		if value, ok := e.env[ex.Name]; ok {
 			return value
 		}
@@ -574,7 +644,7 @@ func (e *Executor) expandVariablesInString(s string) string {
 			var varName strings.Builder
 			
 			if i+1 < len(s) && s[i+1] == '{' {
-				// ${VAR} 格式
+				// ${VAR} 或 ${arr[0]} 格式
 				i += 2
 				for i < len(s) && s[i] != '}' {
 					varName.WriteByte(s[i])
@@ -582,28 +652,54 @@ func (e *Executor) expandVariablesInString(s string) string {
 				}
 				if i < len(s) && s[i] == '}' {
 					i++
-					// 展开变量
-					if value, ok := e.env[varName.String()]; ok {
-						result.WriteString(value)
-					} else if e.options["u"] {
-						// 如果设置了 -u 选项，未定义的变量返回特殊标记
-						result.WriteString("__UNDEFINED_VAR__" + varName.String())
+					varNameStr := varName.String()
+					// 检查是否是数组访问
+					if strings.Contains(varNameStr, "[") {
+						value := e.getArrayElement(varNameStr)
+						if value != "" {
+							result.WriteString(value)
+						} else if e.options["u"] && !strings.Contains(value, "__UNDEFINED_VAR__") {
+							result.WriteString("__UNDEFINED_VAR__" + varNameStr)
+						}
+					} else {
+						// 检查是否是数组变量（返回所有元素）
+						if arr, ok := e.arrays[varNameStr]; ok {
+							result.WriteString(strings.Join(arr, " "))
+						} else if value, ok := e.env[varNameStr]; ok {
+							result.WriteString(value)
+						} else if e.options["u"] {
+							// 如果设置了 -u 选项，未定义的变量返回特殊标记
+							result.WriteString("__UNDEFINED_VAR__" + varNameStr)
+						}
 					}
 					continue
 				}
 			} else if i+1 < len(s) && (isLetter(s[i+1]) || s[i+1] == '_') {
-				// $VAR 格式
+				// $VAR 格式，可能包含数组访问 $arr[0]
 				i++
-				for i < len(s) && (isLetter(s[i]) || isDigit(s[i]) || s[i] == '_') {
+				for i < len(s) && (isLetter(s[i]) || isDigit(s[i]) || s[i] == '_' || s[i] == '[' || s[i] == ']') {
 					varName.WriteByte(s[i])
 					i++
 				}
-				// 展开变量
-				if value, ok := e.env[varName.String()]; ok {
-					result.WriteString(value)
-				} else if e.options["u"] {
-					// 如果设置了 -u 选项，未定义的变量返回特殊标记
-					result.WriteString("__UNDEFINED_VAR__" + varName.String())
+				varNameStr := varName.String()
+				// 检查是否是数组访问
+				if strings.Contains(varNameStr, "[") {
+					value := e.getArrayElement(varNameStr)
+					if value != "" {
+						result.WriteString(value)
+					} else if e.options["u"] && !strings.Contains(value, "__UNDEFINED_VAR__") {
+						result.WriteString("__UNDEFINED_VAR__" + varNameStr)
+					}
+				} else {
+					// 检查是否是数组变量（返回所有元素）
+					if arr, ok := e.arrays[varNameStr]; ok {
+						result.WriteString(strings.Join(arr, " "))
+					} else if value, ok := e.env[varNameStr]; ok {
+						result.WriteString(value)
+					} else if e.options["u"] {
+						// 如果设置了 -u 选项，未定义的变量返回特殊标记
+						result.WriteString("__UNDEFINED_VAR__" + varNameStr)
+					}
 				}
 				continue
 			}

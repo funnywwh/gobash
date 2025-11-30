@@ -137,6 +137,18 @@ func (fs *FunctionStatement) String() string {
 	return "function " + fs.Name
 }
 
+// ArrayAssignmentStatement 数组赋值语句
+// 例如：arr=(1 2 3)
+type ArrayAssignmentStatement struct {
+	Name  string
+	Values []Expression
+}
+
+func (as *ArrayAssignmentStatement) statementNode() {}
+func (as *ArrayAssignmentStatement) String() string {
+	return "array assignment: " + as.Name
+}
+
 // Identifier 标识符
 type Identifier struct {
 	Value string

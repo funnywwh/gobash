@@ -2,6 +2,7 @@
 package parser
 
 import (
+	"strings"
 	"gobash/internal/lexer"
 )
 
@@ -44,6 +45,11 @@ func (p *Parser) ParseProgram() *Program {
 	program.Statements = []Statement{}
 
 	for p.curToken.Type != lexer.EOF {
+		// 跳过空白字符和换行
+		if p.curToken.Type == lexer.WHITESPACE || p.curToken.Type == lexer.NEWLINE {
+			p.nextToken()
+			continue
+		}
 		stmt := p.parseStatement()
 		if stmt != nil {
 			program.Statements = append(program.Statements, stmt)
@@ -66,6 +72,64 @@ func (p *Parser) parseStatement() Statement {
 	case lexer.FUNCTION:
 		return p.parseFunctionStatement()
 		default:
+		// 检查是否是数组赋值 arr=(1 2 3)
+		// 注意：lexer可能将 arr= 识别为一个IDENTIFIER，所以需要检查是否以 = 结尾
+		var isArrayAssignment bool
+		var arrayName string
+		
+		if p.curToken.Type == lexer.IDENTIFIER {
+			// 检查是否是 arr=( 格式（arr= 被识别为一个token）
+			if strings.HasSuffix(p.curToken.Literal, "=") && p.peekToken.Type == lexer.LPAREN {
+				arrayName = strings.TrimSuffix(p.curToken.Literal, "=")
+				isArrayAssignment = true
+			} else if p.peekToken.Type == lexer.LPAREN {
+				// 检查是否是 arr ( 格式（但这种情况应该是函数调用）
+				// 先检查下一个token是否是 )
+				savedCur := p.curToken
+				savedPeek := p.peekToken
+				p.nextToken() // 跳过 (
+				if p.curToken.Type == lexer.RPAREN || 
+				   p.curToken.Type == lexer.IDENTIFIER || 
+				   p.curToken.Type == lexer.STRING ||
+				   p.curToken.Type == lexer.STRING_SINGLE ||
+				   p.curToken.Type == lexer.STRING_DOUBLE ||
+				   p.curToken.Type == lexer.NUMBER {
+					// 这可能是数组赋值 arr(1 2 3)，但Bash不支持这种语法
+					// 恢复状态，继续处理
+					p.curToken = savedCur
+					p.peekToken = savedPeek
+				} else {
+					// 恢复状态
+					p.curToken = savedCur
+					p.peekToken = savedPeek
+				}
+			}
+		}
+		
+		if isArrayAssignment {
+			// 这是数组赋值 arr=(1 2 3)
+			stmt := &ArrayAssignmentStatement{Name: arrayName, Values: []Expression{}}
+			p.nextToken() // 跳过 arr= token
+			p.nextToken() // 跳过 (
+			// 解析数组元素
+			for p.curToken.Type != lexer.RPAREN && p.curToken.Type != lexer.EOF {
+				if p.curToken.Type == lexer.RPAREN {
+					break
+				}
+				// 跳过空白字符
+				if p.curToken.Type == lexer.WHITESPACE {
+					p.nextToken()
+					continue
+				}
+				stmt.Values = append(stmt.Values, p.parseExpression())
+				p.nextToken()
+			}
+			if p.curToken.Type == lexer.RPAREN {
+				p.nextToken() // 跳过 )
+			}
+			return stmt
+		}
+		
 		// 检查是否是函数定义格式 name() { ... }
 		if p.curToken.Type == lexer.IDENTIFIER && p.peekToken.Type == lexer.LPAREN {
 			// 保存当前状态
