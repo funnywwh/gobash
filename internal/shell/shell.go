@@ -65,12 +65,15 @@ func (s *Shell) Run() {
 		historyFile = filepath.Join(home, ".gobash_history")
 	}
 	
+	// 创建自动补全器
+	completer := NewCompleter(s)
+	
 	// 创建readline配置
 	config := &readline.Config{
 		Prompt:          s.prompt,
 		HistoryFile:     historyFile,
 		HistoryLimit:    1000,
-		AutoComplete:    nil, // 暂时不实现自动补全
+		AutoComplete:    completer,
 		InterruptPrompt: "^C",
 		EOFPrompt:       "exit",
 	}
