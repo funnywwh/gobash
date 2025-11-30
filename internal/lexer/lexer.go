@@ -1,0 +1,334 @@
+package lexer
+
+import (
+	"unicode"
+	"unicode/utf8"
+)
+
+// Lexer 词法分析器
+type Lexer struct {
+	input        string
+	position     int  // 当前位置
+	readPosition int  // 读取位置
+	ch           byte // 当前字符
+	line         int  // 当前行号
+	column       int  // 当前列号
+}
+
+// New 创建新的词法分析器
+func New(input string) *Lexer {
+	l := &Lexer{
+		input:  input,
+		line:   1,
+		column: 1,
+	}
+	l.readChar()
+	return l
+}
+
+// readChar 读取下一个字符
+func (l *Lexer) readChar() {
+	if l.readPosition >= len(l.input) {
+		l.ch = 0
+	} else {
+		l.ch = l.input[l.readPosition]
+	}
+	l.position = l.readPosition
+	l.readPosition++
+	if l.ch == '\n' {
+		l.line++
+		l.column = 1
+	} else {
+		l.column++
+	}
+}
+
+// peekChar 查看下一个字符但不移动位置
+func (l *Lexer) peekChar() byte {
+	if l.readPosition >= len(l.input) {
+		return 0
+	}
+	return l.input[l.readPosition]
+}
+
+// NextToken 读取下一个token
+func (l *Lexer) NextToken() Token {
+	var tok Token
+
+	l.skipWhitespace()
+
+	tok.Line = l.line
+	tok.Column = l.column
+
+	switch l.ch {
+	case '|':
+		if l.peekChar() == '|' {
+			ch := l.ch
+			l.readChar()
+			tok = Token{Type: OR, Literal: string(ch) + string(l.ch), Line: tok.Line, Column: tok.Column}
+		} else {
+			tok = newToken(PIPE, l.ch, tok.Line, tok.Column)
+		}
+	case '&':
+		if l.peekChar() == '&' {
+			ch := l.ch
+			l.readChar()
+			tok = Token{Type: AND, Literal: string(ch) + string(l.ch), Line: tok.Line, Column: tok.Column}
+		} else {
+			tok = newToken(AMPERSAND, l.ch, tok.Line, tok.Column)
+		}
+	case '>':
+		if l.peekChar() == '>' {
+			ch := l.ch
+			l.readChar()
+			tok = Token{Type: REDIRECT_APPEND, Literal: string(ch) + string(l.ch), Line: tok.Line, Column: tok.Column}
+		} else if isDigit(l.peekChar()) {
+			// 处理文件描述符重定向，如 2>
+			tok = l.readRedirectFD()
+		} else {
+			tok = newToken(REDIRECT_OUT, l.ch, tok.Line, tok.Column)
+		}
+	case '<':
+		tok = newToken(REDIRECT_IN, l.ch, tok.Line, tok.Column)
+	case ';':
+		tok = newToken(SEMICOLON, l.ch, tok.Line, tok.Column)
+	case '(':
+		tok = newToken(LPAREN, l.ch, tok.Line, tok.Column)
+	case ')':
+		tok = newToken(RPAREN, l.ch, tok.Line, tok.Column)
+	case '{':
+		tok = newToken(LBRACE, l.ch, tok.Line, tok.Column)
+	case '}':
+		tok = newToken(RBRACE, l.ch, tok.Line, tok.Column)
+	case '[':
+		tok = newToken(LBRACKET, l.ch, tok.Line, tok.Column)
+	case ']':
+		tok = newToken(RBRACKET, l.ch, tok.Line, tok.Column)
+	case '\'':
+		tok = l.readString('\'')
+	case '"':
+		tok = l.readString('"')
+	case '`':
+		tok = l.readString('`')
+	case '\\':
+		tok = newToken(ESCAPE, l.ch, tok.Line, tok.Column)
+	case '$':
+		tok = l.readVariable()
+	case 0:
+		tok.Literal = ""
+		tok.Type = EOF
+		tok.Line = l.line
+		tok.Column = l.column
+	case '\n':
+		tok = newToken(NEWLINE, l.ch, tok.Line, tok.Column)
+	default:
+		if isLetter(l.ch) || l.ch == '_' {
+			tok.Literal = l.readIdentifier()
+			tok.Type = LookupIdent(tok.Literal)
+			tok.Line = l.line
+			tok.Column = l.column
+			return tok
+		} else if isDigit(l.ch) {
+			tok.Type = NUMBER
+			tok.Literal = l.readNumber()
+			tok.Line = l.line
+			tok.Column = l.column
+			return tok
+		} else {
+			// 其他字符作为标识符的一部分（如路径中的/）
+			if l.ch != 0 {
+				tok.Literal = l.readIdentifierOrPath()
+				tok.Type = IDENTIFIER
+				tok.Line = l.line
+				tok.Column = l.column
+				return tok
+			}
+			tok = newToken(ILLEGAL, l.ch, tok.Line, tok.Column)
+		}
+	}
+
+	l.readChar()
+	return tok
+}
+
+// newToken 创建新token
+func newToken(tokenType TokenType, ch byte, line, column int) Token {
+	return Token{
+		Type:    tokenType,
+		Literal: string(ch),
+		Line:    line,
+		Column:  column,
+	}
+}
+
+// readIdentifier 读取标识符
+func (l *Lexer) readIdentifier() string {
+	position := l.position
+	for isLetter(l.ch) || isDigit(l.ch) || l.ch == '_' {
+		l.readChar()
+	}
+	return l.input[position:l.position]
+}
+
+// readIdentifierOrPath 读取标识符或路径（包含特殊字符）
+func (l *Lexer) readIdentifierOrPath() string {
+	position := l.position
+	for l.ch != 0 && 
+		l.ch != ' ' && 
+		l.ch != '\t' && 
+		l.ch != '\n' &&
+		l.ch != '|' &&
+		l.ch != '>' &&
+		l.ch != '<' &&
+		l.ch != '&' &&
+		l.ch != ';' &&
+		l.ch != '(' &&
+		l.ch != ')' &&
+		l.ch != '{' &&
+		l.ch != '}' &&
+		l.ch != '[' &&
+		l.ch != ']' &&
+		l.ch != '$' &&
+		l.ch != '\'' &&
+		l.ch != '"' &&
+		l.ch != '`' {
+		l.readChar()
+	}
+	return l.input[position:l.position]
+}
+
+// readNumber 读取数字
+func (l *Lexer) readNumber() string {
+	position := l.position
+	for isDigit(l.ch) {
+		l.readChar()
+	}
+	return l.input[position:l.position]
+}
+
+// readVariable 读取变量
+func (l *Lexer) readVariable() Token {
+	startLine := l.line
+	startColumn := l.column
+	l.readChar() // 跳过 $
+
+	if l.ch == '{' {
+		// ${VAR} 格式
+		l.readChar() // 跳过 {
+		position := l.position
+		for isLetter(l.ch) || isDigit(l.ch) || l.ch == '_' {
+			l.readChar()
+		}
+		if l.ch == '}' {
+			varName := l.input[position:l.position]
+			l.readChar() // 跳过 }
+			return Token{
+				Type:    VAR,
+				Literal: varName,
+				Line:    startLine,
+				Column:  startColumn,
+			}
+		}
+		return Token{Type: ILLEGAL, Literal: "${", Line: startLine, Column: startColumn}
+	} else if isLetter(l.ch) || l.ch == '_' {
+		// $VAR 格式
+		position := l.position
+		for isLetter(l.ch) || isDigit(l.ch) || l.ch == '_' {
+			l.readChar()
+		}
+		return Token{
+			Type:    VAR,
+			Literal: l.input[position:l.position],
+			Line:    startLine,
+			Column:  startColumn,
+		}
+	} else {
+		// 单独的 $，可能是 $? 等特殊变量
+		return Token{
+			Type:    DOLLAR,
+			Literal: "$",
+			Line:    startLine,
+			Column:  startColumn,
+		}
+	}
+}
+
+// readRedirectFD 读取文件描述符重定向
+func (l *Lexer) readRedirectFD() Token {
+	startLine := l.line
+	startColumn := l.column
+	position := l.position
+	for isDigit(l.ch) {
+		l.readChar()
+	}
+	fd := l.input[position:l.position]
+	if l.ch == '>' {
+		l.readChar()
+		if l.ch == '>' {
+			l.readChar()
+			return Token{
+				Type:    REDIRECT_APPEND,
+				Literal: fd + ">>",
+				Line:    startLine,
+				Column:  startColumn,
+			}
+		}
+		return Token{
+			Type:    REDIRECT_OUT,
+			Literal: fd + ">",
+			Line:    startLine,
+			Column:  startColumn,
+		}
+	}
+	return Token{Type: ILLEGAL, Literal: fd, Line: startLine, Column: startColumn}
+}
+
+// readString 读取字符串（单引号、双引号或反引号）
+func (l *Lexer) readString(quote byte) Token {
+	startLine := l.line
+	startColumn := l.column
+	position := l.position + 1 // 跳过开始的引号
+	l.readChar()
+
+	for l.ch != quote && l.ch != 0 {
+		if quote == '"' && l.ch == '\\' {
+			// 双引号内允许转义
+			l.readChar()
+		}
+		l.readChar()
+	}
+
+	var literal string
+	if l.ch == quote {
+		literal = l.input[position:l.position]
+		l.readChar() // 跳过结束引号
+	} else {
+		// 未闭合的引号
+		literal = l.input[position:]
+	}
+
+	return Token{
+		Type:    STRING,
+		Literal: literal,
+		Line:    startLine,
+		Column:  startColumn,
+	}
+}
+
+// skipWhitespace 跳过空白字符
+func (l *Lexer) skipWhitespace() {
+	for l.ch == ' ' || l.ch == '\t' || l.ch == '\r' {
+		l.readChar()
+	}
+}
+
+// isLetter 判断是否为字母
+func isLetter(ch byte) bool {
+	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch >= utf8.RuneSelf && unicode.IsLetter(rune(ch))
+}
+
+// isDigit 判断是否为数字
+func isDigit(ch byte) bool {
+	return '0' <= ch && ch <= '9'
+}
+
