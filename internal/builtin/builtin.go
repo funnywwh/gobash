@@ -49,6 +49,7 @@ func init() {
 	builtins["wc"] = wc
 	builtins["grep"] = grep
 	builtins["sort"] = sortCmd
+	builtins["uniq"] = uniq
 }
 
 // GetBuiltins 获取所有内置命令
