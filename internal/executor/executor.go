@@ -352,12 +352,41 @@ func (e *Executor) executeIf(stmt *parser.IfStatement) error {
 
 // executeFor 执行for循环
 func (e *Executor) executeFor(stmt *parser.ForStatement) error {
-	// 如果没有in子句，使用位置参数
+	// 如果没有in子句，使用位置参数（$1, $2, ...）
 	if len(stmt.In) == 0 {
-		// TODO: 实现位置参数
+		// 从环境变量中获取位置参数
+		// 位置参数存储在环境变量中，键为"1", "2", "3"等
+		// 参数个数存储在"#"中
+		argCount := 0
+		if countStr, ok := e.env["#"]; ok {
+			if count, err := fmt.Sscanf(countStr, "%d", &argCount); err == nil && count == 1 {
+				// 成功解析参数个数
+			}
+		}
+		
+		// 如果没有参数个数信息，尝试从$@获取
+		if argCount == 0 {
+			if allArgs, ok := e.env["@"]; ok && allArgs != "" {
+				// 从$@中提取参数（空格分隔）
+				args := strings.Fields(allArgs)
+				argCount = len(args)
+			}
+		}
+		
+		// 遍历位置参数
+		for i := 1; i <= argCount; i++ {
+			key := fmt.Sprintf("%d", i)
+			if value, ok := e.env[key]; ok {
+				e.env[stmt.Variable] = value
+				if err := e.executeBlock(stmt.Body); err != nil {
+					return err
+				}
+			}
+		}
 		return nil
 	}
 
+	// 有in子句，使用指定的值列表
 	for _, item := range stmt.In {
 		value := e.evaluateExpression(item)
 		e.env[stmt.Variable] = value

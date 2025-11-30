@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/user"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -124,8 +125,13 @@ func echo(args []string, env map[string]string) error {
 func exit(args []string, env map[string]string) error {
 	code := 0
 	if len(args) > 0 {
-		// TODO: 解析退出码
-		code = 0
+		// 解析退出码
+		if parsed, err := strconv.Atoi(args[0]); err == nil {
+			code = parsed
+		} else {
+			// 如果无法解析，使用默认值0
+			code = 0
+		}
 	}
 	os.Exit(code)
 	return nil
