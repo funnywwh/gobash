@@ -328,6 +328,10 @@ func (e *Executor) evaluateExpression(expr parser.Expression) string {
 	case *parser.Identifier:
 		return ex.Value
 	case *parser.StringLiteral:
+		// 只有双引号字符串才展开变量，单引号字符串不展开
+		if ex.IsQuote {
+			return e.expandVariablesInString(ex.Value)
+		}
 		return ex.Value
 	case *parser.Variable:
 		if value, ok := e.env[ex.Name]; ok {
@@ -337,6 +341,64 @@ func (e *Executor) evaluateExpression(expr parser.Expression) string {
 	default:
 		return ""
 	}
+}
+
+// expandVariablesInString 展开字符串中的变量（如 "TEST=$TEST"）
+func (e *Executor) expandVariablesInString(s string) string {
+	var result strings.Builder
+	i := 0
+	for i < len(s) {
+		if s[i] == '$' && i+1 < len(s) {
+			// 处理变量展开
+			var varName strings.Builder
+			
+			if i+1 < len(s) && s[i+1] == '{' {
+				// ${VAR} 格式
+				i += 2
+				for i < len(s) && s[i] != '}' {
+					varName.WriteByte(s[i])
+					i++
+				}
+				if i < len(s) && s[i] == '}' {
+					i++
+					// 展开变量
+					if value, ok := e.env[varName.String()]; ok {
+						result.WriteString(value)
+					}
+					continue
+				}
+			} else if i+1 < len(s) && (isLetter(s[i+1]) || s[i+1] == '_') {
+				// $VAR 格式
+				i++
+				for i < len(s) && (isLetter(s[i]) || isDigit(s[i]) || s[i] == '_') {
+					varName.WriteByte(s[i])
+					i++
+				}
+				// 展开变量
+				if value, ok := e.env[varName.String()]; ok {
+					result.WriteString(value)
+				}
+				continue
+			}
+			// 不是变量，保留原字符
+			result.WriteByte(s[i])
+			i++
+		} else {
+			result.WriteByte(s[i])
+			i++
+		}
+	}
+	return result.String()
+}
+
+// isLetter 判断是否为字母
+func isLetter(ch byte) bool {
+	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z'
+}
+
+// isDigit 判断是否为数字
+func isDigit(ch byte) bool {
+	return '0' <= ch && ch <= '9'
 }
 
 // getEnvArray 获取环境变量数组

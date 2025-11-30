@@ -1,6 +1,7 @@
 package lexer
 
 import (
+	"strings"
 	"unicode"
 	"unicode/utf8"
 )
@@ -106,8 +107,10 @@ func (l *Lexer) NextToken() Token {
 		tok = newToken(RBRACKET, l.ch, tok.Line, tok.Column)
 	case '\'':
 		tok = l.readString('\'')
+		tok.Type = STRING_SINGLE
 	case '"':
 		tok = l.readString('"')
+		tok.Type = STRING_DOUBLE
 	case '`':
 		tok = l.readString('`')
 	case '\\':
@@ -298,29 +301,39 @@ func (l *Lexer) readRedirectFD() Token {
 func (l *Lexer) readString(quote byte) Token {
 	startLine := l.line
 	startColumn := l.column
-	position := l.position + 1 // 跳过开始的引号
-	l.readChar()
+	l.readChar() // 跳过开始的引号
 
+	var literal strings.Builder
 	for l.ch != quote && l.ch != 0 {
 		if quote == '"' && l.ch == '\\' {
 			// 双引号内允许转义
 			l.readChar()
+			if l.ch != 0 {
+				literal.WriteByte(l.ch)
+				l.readChar()
+			}
+		} else if quote == '"' && l.ch == '$' {
+			// 双引号内需要保留 $ 以便后续展开变量
+			literal.WriteByte(l.ch)
+			l.readChar()
+		} else {
+			literal.WriteByte(l.ch)
+			l.readChar()
 		}
-		l.readChar()
 	}
 
-	var literal string
+	var result string
 	if l.ch == quote {
-		literal = l.input[position:l.position]
+		result = literal.String()
 		l.readChar() // 跳过结束引号
 	} else {
 		// 未闭合的引号
-		literal = l.input[position:]
+		result = literal.String()
 	}
 
 	return Token{
 		Type:    STRING,
-		Literal: literal,
+		Literal: result,
 		Line:    startLine,
 		Column:  startColumn,
 	}

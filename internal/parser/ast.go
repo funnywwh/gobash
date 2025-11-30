@@ -149,12 +149,16 @@ func (i *Identifier) String() string {
 
 // StringLiteral 字符串字面量
 type StringLiteral struct {
-	Value string
+	Value   string
+	IsQuote bool // 是否为引号字符串（双引号需要展开变量，单引号不需要）
 }
 
 func (sl *StringLiteral) expressionNode() {}
 func (sl *StringLiteral) String() string {
-	return "\"" + sl.Value + "\""
+	if sl.IsQuote {
+		return "\"" + sl.Value + "\""
+	}
+	return "'" + sl.Value + "'"
 }
 
 // Variable 变量

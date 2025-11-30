@@ -11,9 +11,11 @@ const (
 	NEWLINE
 
 	// 标识符和字面量
-	IDENTIFIER // 命令名、变量名等
-	STRING     // 字符串字面量
-	NUMBER     // 数字
+	IDENTIFIER    // 命令名、变量名等
+	STRING        // 字符串字面量
+	STRING_SINGLE // 单引号字符串（不展开变量）
+	STRING_DOUBLE // 双引号字符串（展开变量）
+	NUMBER        // 数字
 
 	// 操作符
 	PIPE          // |

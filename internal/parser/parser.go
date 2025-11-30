@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"strings"
 	"gobash/internal/lexer"
 )
 
@@ -202,7 +203,10 @@ func (p *Parser) parseExpression() Expression {
 	case lexer.IDENTIFIER:
 		return &Identifier{Value: p.curToken.Literal}
 	case lexer.STRING:
-		return &StringLiteral{Value: p.curToken.Literal}
+		// 判断是否为双引号字符串（需要展开变量）
+		// 简化处理：如果包含 $ 则认为是双引号字符串
+		isQuote := strings.Contains(p.curToken.Literal, "$")
+		return &StringLiteral{Value: p.curToken.Literal, IsQuote: isQuote}
 	case lexer.VAR:
 		return &Variable{Name: p.curToken.Literal}
 	case lexer.DOLLAR:
