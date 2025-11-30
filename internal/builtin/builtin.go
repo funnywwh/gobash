@@ -41,6 +41,8 @@ func init() {
 	builtins["type"] = typeCmd
 	builtins["true"] = trueCmd
 	builtins["false"] = falseCmd
+	builtins["test"] = testCmd
+	builtins["["] = testCmd // [ 是 test 的别名，但需要处理结尾的 ]
 }
 
 // GetBuiltins 获取所有内置命令
@@ -692,5 +694,168 @@ func trueCmd(args []string, env map[string]string) error {
 // falseCmd 总是失败返回
 func falseCmd(args []string, env map[string]string) error {
 	return fmt.Errorf("false")
+}
+
+// testCmd 测试条件（test命令和[命令）
+func testCmd(args []string, env map[string]string) error {
+	// 处理 [ 命令，需要移除结尾的 ]
+	if len(args) > 0 && args[len(args)-1] == "]" {
+		args = args[:len(args)-1]
+	}
+	
+	if len(args) == 0 {
+		return fmt.Errorf("test: 缺少参数")
+	}
+	
+	// 解析测试表达式
+	result, err := evaluateTestExpression(args)
+	if err != nil {
+		return err
+	}
+	
+	if !result {
+		return fmt.Errorf("test failed")
+	}
+	
+	return nil
+}
+
+// evaluateTestExpression 计算测试表达式
+func evaluateTestExpression(args []string) (bool, error) {
+	if len(args) == 0 {
+		return false, fmt.Errorf("test: 缺少参数")
+	}
+	
+	// 单参数：检查字符串是否非空
+	if len(args) == 1 {
+		return args[0] != "", nil
+	}
+	
+	// 两参数：文件测试或字符串测试
+	if len(args) == 2 {
+		op := args[0]
+		value := args[1]
+		
+		// 字符串测试
+		if op == "-n" {
+			return value != "", nil
+		}
+		if op == "-z" {
+			return value == "", nil
+		}
+		
+		// 文件测试
+		switch op {
+		case "-f":
+			return testFile(value, func(info os.FileInfo) bool {
+				return !info.IsDir()
+			})
+		case "-d":
+			return testFile(value, func(info os.FileInfo) bool {
+				return info.IsDir()
+			})
+		case "-e":
+			return testFile(value, func(info os.FileInfo) bool {
+				return true
+			})
+		case "-r":
+			return testFile(value, func(info os.FileInfo) bool {
+				// 简化：检查文件是否存在
+				return true
+			})
+		case "-w":
+			return testFile(value, func(info os.FileInfo) bool {
+				// 简化：检查文件是否存在
+				return true
+			})
+		case "-x":
+			return testFile(value, func(info os.FileInfo) bool {
+				// 简化：检查文件是否存在
+				return true
+			})
+		}
+		
+		// 默认：检查第一个参数是否非空
+		return args[0] != "", nil
+	}
+	
+	// 三参数：二元操作
+	if len(args) == 3 {
+		left := args[0]
+		op := args[1]
+		right := args[2]
+		
+		switch op {
+		case "=":
+			return left == right, nil
+		case "!=":
+			return left != right, nil
+		case "-eq":
+			return compareNumbers(left, right, "==")
+		case "-ne":
+			return compareNumbers(left, right, "!=")
+		case "-lt":
+			return compareNumbers(left, right, "<")
+		case "-le":
+			return compareNumbers(left, right, "<=")
+		case "-gt":
+			return compareNumbers(left, right, ">")
+		case "-ge":
+			return compareNumbers(left, right, ">=")
+		}
+	}
+	
+	return false, fmt.Errorf("test: 不支持的表达式")
+}
+
+// testFile 测试文件
+func testFile(path string, testFunc func(os.FileInfo) bool) (bool, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false, nil // 文件不存在，返回false
+	}
+	return testFunc(info), nil
+}
+
+// compareNumbers 比较数字
+func compareNumbers(left, right, op string) (bool, error) {
+	leftNum, err1 := strconv.ParseInt(left, 10, 64)
+	rightNum, err2 := strconv.ParseInt(right, 10, 64)
+	
+	if err1 != nil || err2 != nil {
+		// 如果无法解析为数字，进行字符串比较
+		switch op {
+		case "==":
+			return left == right, nil
+		case "!=":
+			return left != right, nil
+		case "<":
+			return left < right, nil
+		case "<=":
+			return left <= right, nil
+		case ">":
+			return left > right, nil
+		case ">=":
+			return left >= right, nil
+		}
+		return false, nil
+	}
+	
+	switch op {
+	case "==":
+		return leftNum == rightNum, nil
+	case "!=":
+		return leftNum != rightNum, nil
+	case "<":
+		return leftNum < rightNum, nil
+	case "<=":
+		return leftNum <= rightNum, nil
+	case ">":
+		return leftNum > rightNum, nil
+	case ">=":
+		return leftNum >= rightNum, nil
+	}
+	
+	return false, nil
 }
 
