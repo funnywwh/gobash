@@ -96,6 +96,7 @@ gobash.exe -c "echo hello world"
 - `set -e` / `set +e` - 遇到错误立即退出/继续执行（errexit）
 - `set -u` / `set +u` - 使用未定义变量时报错/允许未定义变量（nounset）
 - `set -xe` - 可以组合多个选项
+- `declare -A [变量]` - 声明关联数组（用于创建关联数组）
 
 ### 控制
 - `exit [退出码]` - 退出shell
@@ -564,6 +565,8 @@ gobash/
 - `examples/text_processing.sh` - 文本处理命令示例（head, tail, grep, sort等）
 - `examples/advanced.sh` - 高级功能示例（set选项、函数参数等）
 - `examples/job_control.sh` - 作业控制功能示例（后台任务、jobs、fg、bg）
+- `examples/array_test.sh` - 数组功能示例
+- `examples/advanced_features.sh` - 高级功能综合示例（数组、关联数组、进程替换）
 
 运行示例：
 
@@ -572,6 +575,8 @@ gobash.exe examples/basic.sh
 gobash.exe examples/text_processing.sh
 gobash.exe examples/advanced.sh
 gobash.exe examples/job_control.sh
+gobash.exe examples/array_test.sh
+gobash.exe examples/advanced_features.sh
 ```
 
 ### 详细文档

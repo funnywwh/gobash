@@ -189,11 +189,12 @@ if len(stmt.In) == 0 {
 - ✅ Shell选项（set -x, -e, -u等）
 - ✅ 增强的错误处理和提示
 
-**示例脚本（4个）**
+**示例脚本（5个）**
 - ✅ basic.sh - 基础功能示例
 - ✅ text_processing.sh - 文本处理命令示例
 - ✅ advanced.sh - 高级功能示例
 - ✅ job_control.sh - 作业控制功能示例
+- ✅ array_test.sh - 数组和关联数组功能示例
 
 ### 🔧 最近完成的改进
 - ✅ 修复了fg命令中的进程Wait问题（避免重复Wait）
@@ -253,10 +254,11 @@ if len(stmt.In) == 0 {
 ## 📈 项目统计
 
 ### 代码规模
-- **总文件数**: 约20+个Go源文件
+- **总文件数**: 约30+个Go源文件
 - **核心模块**: 5个（lexer, parser, executor, builtin, shell）
-- **内置命令**: 30+个
-- **示例脚本**: 4个
+- **内置命令**: 31个
+- **示例脚本**: 5个（basic.sh, text_processing.sh, advanced.sh, job_control.sh, array_test.sh）
+- **测试文件**: 8个测试文件，50+个测试用例
 
 ### 技术栈
 - **语言**: Go 1.x
@@ -312,6 +314,7 @@ if len(stmt.In) == 0 {
 - `examples/text_processing.sh` - 文本处理命令演示
 - `examples/advanced.sh` - 高级功能演示
 - `examples/job_control.sh` - 作业控制功能演示
+- `examples/array_test.sh` - 数组和关联数组功能演示
 
 ### 代码结构
 ```

@@ -1,3 +1,12 @@
+// Package shell 提供交互式Shell的核心功能
+//
+// 该包实现了Shell的主要功能，包括：
+// - 交互式REPL循环
+// - 命令历史管理
+// - 别名管理
+// - Shell选项管理
+// - 自动补全功能
+// - 脚本文件执行
 package shell
 
 import (
@@ -14,6 +23,7 @@ import (
 )
 
 // Shell Shell主结构
+// 管理Shell的状态，包括执行器、提示符、别名、历史记录和选项
 type Shell struct {
 	executor *executor.Executor
 	prompt   string
@@ -24,6 +34,7 @@ type Shell struct {
 }
 
 // New 创建新的Shell实例
+// 初始化Shell结构，加载历史记录，创建执行器实例
 func New() *Shell {
 	history := NewHistory(1000)
 	
@@ -53,6 +64,8 @@ func New() *Shell {
 }
 
 // Run 运行交互式Shell
+// 启动REPL循环，支持readline库的交互功能（历史记录、自动补全等）
+// 如果readline不可用，会自动回退到简单的输入模式
 func (s *Shell) Run() {
 	// 配置readline
 	home := os.Getenv("HOME")
@@ -141,6 +154,7 @@ func (s *Shell) Run() {
 }
 
 // runSimple 简单的运行模式（当readline不可用时回退）
+// 使用bufio.Scanner进行基本的命令行输入，不支持历史记录和自动补全
 func (s *Shell) runSimple() {
 	scanner := bufio.NewScanner(os.Stdin)
 
@@ -205,6 +219,7 @@ func (s *Shell) ExecuteScript(scriptPath string) error {
 }
 
 // ExecuteReader 从Reader执行命令
+// 用于执行脚本文件，自动跳过shebang行和注释行
 func (s *Shell) ExecuteReader(reader io.Reader) error {
 	scanner := bufio.NewScanner(reader)
 	firstLine := true
@@ -243,6 +258,7 @@ func (s *Shell) ExecuteReader(reader io.Reader) error {
 }
 
 // executeLine 执行一行命令
+// 支持分号分隔的多个命令
 func (s *Shell) executeLine(line string) error {
 	line = strings.TrimSpace(line)
 	if line == "" {
@@ -261,6 +277,7 @@ func (s *Shell) executeLine(line string) error {
 }
 
 // executeCommand 执行单个命令
+// 处理别名展开、词法分析、语法分析和命令执行
 func (s *Shell) executeCommand(input string) error {
 	if strings.TrimSpace(input) == "" {
 		return nil
@@ -305,6 +322,7 @@ func (s *Shell) executeCommand(input string) error {
 }
 
 // expandAlias 展开别名
+// 如果命令名是已定义的别名，则替换为别名值
 func (s *Shell) expandAlias(input string) string {
 	parts := strings.Fields(input)
 	if len(parts) == 0 {
@@ -324,6 +342,7 @@ func (s *Shell) expandAlias(input string) string {
 }
 
 // handleAliasCommand 处理alias命令
+// 支持设置别名、显示所有别名或显示特定别名
 func (s *Shell) handleAliasCommand(args []string) error {
 	if len(args) == 0 {
 		// 显示所有别名
@@ -352,6 +371,7 @@ func (s *Shell) handleAliasCommand(args []string) error {
 }
 
 // handleSetCommand 处理set命令
+// 支持设置/取消Shell选项（-x, -e, -u等）和设置变量
 func (s *Shell) handleSetCommand(args []string) error {
 	if len(args) == 0 {
 		// 显示所有变量
@@ -402,6 +422,7 @@ func (s *Shell) handleSetCommand(args []string) error {
 }
 
 // handleUnaliasCommand 处理unalias命令
+// 支持删除特定别名或清除所有别名（-a选项）
 func (s *Shell) handleUnaliasCommand(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("unalias: 缺少操作数")

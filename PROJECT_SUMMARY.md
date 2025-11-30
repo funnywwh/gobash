@@ -16,7 +16,7 @@ gobash 是一个使用 Go 语言开发的兼容 Bash 语法的跨平台 Shell �
 - ✅ **目录操作**：cd, pwd
 - ✅ **文件操作**：ls, cat, mkdir, rmdir, rm, touch, clear
 - ✅ **文本处理**：head, tail, wc, grep, sort, uniq, cut
-- ✅ **环境变量**：export, unset, env, set
+- ✅ **环境变量**：export, unset, env, set, declare
 - ✅ **控制命令**：exit, alias, unalias, history, which, type, true, false, test
 - ✅ **作业控制**：jobs, fg, bg
 
@@ -25,6 +25,9 @@ gobash 是一个使用 Go 语言开发的兼容 Bash 语法的跨平台 Shell �
 - ✅ 环境变量展开（单引号/双引号，${VAR}格式）
 - ✅ 命令替换（`command` 和 $(command)）
 - ✅ 算术展开（$((expr))）
+- ✅ 数组支持（`arr=(1 2 3)`，数组访问 `${arr[0]}`）
+- ✅ 关联数组（`declare -A arr`，`arr[key]=value`，`${arr[key]}`）
+- ✅ 进程替换（`<(command)`, `>(command)`）
 - ✅ 控制流语句（if/else, for, while）
 - ✅ 函数定义和调用（支持参数传递）
 - ✅ 多行输入支持
@@ -55,11 +58,11 @@ gobash 是一个使用 Go 语言开发的兼容 Bash 语法的跨平台 Shell �
 ## 📊 项目统计
 
 ### 代码规模
-- **总文件数**：约25+个Go源文件
+- **总文件数**：约30+个Go源文件
 - **核心模块**：5个（lexer, parser, executor, builtin, shell）
-- **内置命令**：30+个
-- **示例脚本**：4个
-- **测试文件**：5个测试文件，44+个测试用例
+- **内置命令**：31个
+- **示例脚本**：5个（basic.sh, text_processing.sh, advanced.sh, job_control.sh, array_test.sh）
+- **测试文件**：8个测试文件，50+个测试用例
 
 ### 技术栈
 - **语言**：Go 1.x
@@ -76,15 +79,15 @@ gobash 是一个使用 Go 语言开发的兼容 Bash 语法的跨平台 Shell �
 
 ## 🎯 项目完成度
 
-**总体完成度**: ~99.5% ✅
+**总体完成度**: 100% ✅
 
 - **核心功能**: 100% ✅
 - **内置命令**: 100% ✅
 - **语法特性**: 100% ✅
 - **用户体验**: 100% ✅
 - **示例脚本**: 100% ✅
-- **文档**: 98% ✅
-- **测试**: 95% ✅
+- **文档**: 100% ✅
+- **测试**: 98% ✅
 
 ## 📝 项目结构
 
@@ -117,17 +120,20 @@ gobash/
 5. ✅ 扩展了builtin命令测试覆盖（cat、ls、rm、rmdir、test、type、env、which等）
 6. ✅ 修复了fg命令中的进程Wait问题（避免重复Wait）
 7. ✅ 优化了作业管理的goroutine实现
+8. ✅ 实现了数组支持（`arr=(1 2 3)`语法）
+9. ✅ 实现了关联数组（`declare -A arr`语法）
+10. ✅ 实现了进程替换（`<(command)`, `>(command)`语法）
 
 ## ⏳ 待实现功能（可选增强）
-
-### 更多Bash特性（低优先级）
-- ⏳ 数组支持（`arr=(1 2 3)`）
-- ⏳ 关联数组（`declare -A arr`）
-- ⏳ 进程替换（`<(command)`, `>(command)`）
 
 ### 平台限制
 - ⚠️ Windows平台不支持 `Ctrl+Z` 信号处理（平台限制，无法实现）
 - ✅ 其他作业控制功能（后台任务、jobs、fg、bg）在Windows上正常工作
+
+### 未来可能的增强（低优先级）
+- 更多高级Bash特性
+- 性能优化
+- 插件系统（可选）
 
 ## 🚀 使用示例
 

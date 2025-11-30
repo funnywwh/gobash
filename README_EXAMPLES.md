@@ -341,6 +341,63 @@ gobash.exe examples/text_processing.sh
 gobash.exe examples/advanced.sh
 ```
 
+## 数组和关联数组
+
+### 数组
+
+```bash
+# 数组赋值
+arr=(1 2 3 4 5)
+names=("Alice" "Bob" "Charlie")
+
+# 数组访问
+echo ${arr[0]}  # 输出: 1
+echo ${arr[1]}  # 输出: 2
+
+# 数组变量展开（所有元素）
+echo $arr  # 输出: 1 2 3 4 5
+
+# 在for循环中使用数组
+for i in $arr; do
+    echo "数字: $i"
+done
+```
+
+### 关联数组
+
+```bash
+# 声明关联数组
+declare -A arr
+
+# 关联数组赋值
+arr[hello]=world
+arr[foo]=bar
+arr[number]=123
+
+# 关联数组访问
+echo ${arr[hello]}  # 输出: world
+echo ${arr[foo]}     # 输出: bar
+
+# 使用变量作为键
+key="foo"
+echo ${arr[$key]}    # 输出: bar
+```
+
+## 进程替换
+
+```bash
+# 进程替换（输入）：将命令输出作为文件读取
+cat <(echo "hello world")
+# 输出: hello world
+
+# 比较两个排序后的文件
+diff <(sort file1.txt) <(sort file2.txt)
+
+# 进程替换（输出）：将命令输入作为文件写入
+echo "test" >(cat)
+# 注意：>(command)通常用于将输出重定向到命令的输入
+```
+
 ## 更多信息
 
 查看 [README.md](README.md) 了解完整的功能列表和安装说明。

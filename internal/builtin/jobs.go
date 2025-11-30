@@ -8,6 +8,7 @@ import (
 )
 
 // JobManager 作业管理器接口（避免循环导入）
+// 定义作业管理器的接口，用于builtin包与executor包之间的通信
 type JobManager interface {
 	GetJob(jobID int) (Job, bool)
 	GetAllJobs() []Job
@@ -16,6 +17,7 @@ type JobManager interface {
 }
 
 // Job 作业接口
+// 定义作业的接口，提供获取作业信息和控制作业的方法
 type Job interface {
 	GetID() int
 	GetPID() int
@@ -27,12 +29,13 @@ type Job interface {
 }
 
 // JobStatus 作业状态
+// 表示作业的当前状态
 type JobStatus int
 
 const (
-	JobRunning JobStatus = iota
-	JobStopped
-	JobDone
+	JobRunning JobStatus = iota // 作业正在运行
+	JobStopped                   // 作业已停止
+	JobDone                      // 作业已完成
 )
 
 func (js JobStatus) String() string {
@@ -52,11 +55,13 @@ func (js JobStatus) String() string {
 var globalJobManager JobManager
 
 // SetJobManager 设置JobManager引用
+// 由executor包调用，设置全局的作业管理器引用
 func SetJobManager(jm JobManager) {
 	globalJobManager = jm
 }
 
 // jobs 显示作业列表
+// 显示所有后台作业的列表，包括作业ID、状态和命令
 func jobs(args []string, env map[string]string) error {
 	if globalJobManager == nil {
 		return fmt.Errorf("jobs: job manager未初始化")
@@ -77,6 +82,8 @@ func jobs(args []string, env map[string]string) error {
 }
 
 // fg 将后台任务转到前台
+// 将指定的后台作业转到前台执行，并等待其完成
+// 支持 %1 或 1 格式的作业ID，如果不指定则使用当前作业或最后一个作业
 func fg(args []string, env map[string]string) error {
 	if globalJobManager == nil {
 		return fmt.Errorf("fg: job manager未初始化")
@@ -128,6 +135,9 @@ func fg(args []string, env map[string]string) error {
 }
 
 // bg 继续后台任务
+// 继续执行被停止的后台作业
+// 支持 %1 或 1 格式的作业ID，如果不指定则使用当前作业或最后一个作业
+// 注意：Windows平台不支持SIGCONT信号，此功能在Windows上有限制
 func bg(args []string, env map[string]string) error {
 	if globalJobManager == nil {
 		return fmt.Errorf("bg: job manager未初始化")
