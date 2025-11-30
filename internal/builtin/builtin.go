@@ -433,6 +433,8 @@ func mkdir(args []string, env map[string]string) error {
 }
 
 // rmdir 删除空目录
+// 只能删除空目录，如果目录不为空会返回错误
+// 支持同时删除多个目录
 func rmdir(args []string, env map[string]string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("rmdir: 缺少操作数")
