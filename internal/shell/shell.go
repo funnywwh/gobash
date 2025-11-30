@@ -19,6 +19,7 @@ type Shell struct {
 	running  bool
 	aliases  map[string]string
 	history  *History
+	options  map[string]bool // shell选项状态
 }
 
 // New 创建新的Shell实例
@@ -35,13 +36,19 @@ func New() *Shell {
 		history.LoadFromFile(historyFile)
 	}
 
-	return &Shell{
+	sh := &Shell{
 		executor: executor.New(),
 		prompt:   getPrompt(),
 		running:  true,
 		aliases:  make(map[string]string),
 		history:  history,
+		options:  make(map[string]bool),
 	}
+	
+	// 将选项状态传递给执行器
+	sh.executor.SetOptions(sh.options)
+	
+	return sh
 }
 
 // Run 运行交互式Shell
@@ -180,6 +187,8 @@ func (s *Shell) executeCommand(input string) error {
 			return s.handleUnaliasCommand(parts[1:])
 		} else if cmd == "history" {
 			return s.handleHistoryCommand(parts[1:])
+		} else if cmd == "set" {
+			return s.handleSetCommand(parts[1:])
 		}
 	}
 
@@ -250,6 +259,56 @@ func (s *Shell) handleAliasCommand(args []string) error {
 		}
 	}
 
+	return nil
+}
+
+// handleSetCommand 处理set命令
+func (s *Shell) handleSetCommand(args []string) error {
+	if len(args) == 0 {
+		// 显示所有变量
+		env := s.executor.GetOptions()
+		_ = env // 暂时不使用，显示变量需要访问executor的env
+		// 显示当前选项状态
+		fmt.Println("--- Shell Options ---")
+		for opt, enabled := range s.options {
+			if enabled {
+				fmt.Printf("set -%s\n", opt)
+			} else {
+				fmt.Printf("set +%s\n", opt)
+			}
+		}
+		return nil
+	}
+	
+	// 处理选项
+	for _, arg := range args {
+		if arg == "--" {
+			// set -- 重置位置参数（这里暂时忽略）
+			continue
+		}
+		
+		if strings.HasPrefix(arg, "-") || strings.HasPrefix(arg, "+") {
+			// 解析选项，如 -x, -e, +x, +e
+			enable := arg[0] == '-'
+			optionStr := arg[1:]
+			
+			// 处理多个选项，如 -xe
+			for _, opt := range optionStr {
+				optStr := string(opt)
+				s.options[optStr] = enable
+				
+				// 同步到执行器
+				s.executor.SetOptions(s.options)
+			}
+		} else {
+			// 设置变量（set VAR=value）
+			parts := strings.SplitN(arg, "=", 2)
+			if len(parts) == 2 {
+				s.executor.SetEnv(parts[0], parts[1])
+			}
+		}
+	}
+	
 	return nil
 }
 

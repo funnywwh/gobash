@@ -14,6 +14,7 @@ type Executor struct {
 	env       map[string]string
 	builtins  map[string]builtin.BuiltinFunc
 	functions map[string]*parser.FunctionStatement
+	options   map[string]bool // shell选项状态
 }
 
 // New 创建新的执行器
@@ -22,6 +23,7 @@ func New() *Executor {
 		env:       make(map[string]string),
 		builtins:  builtin.GetBuiltins(),
 		functions: make(map[string]*parser.FunctionStatement),
+		options:   make(map[string]bool),
 	}
 	// 初始化环境变量
 	for _, env := range os.Environ() {
@@ -29,6 +31,16 @@ func New() *Executor {
 		e.env[key] = value
 	}
 	return e
+}
+
+// SetOptions 设置shell选项
+func (e *Executor) SetOptions(options map[string]bool) {
+	e.options = options
+}
+
+// GetOptions 获取shell选项
+func (e *Executor) GetOptions() map[string]bool {
+	return e.options
 }
 
 // Execute 执行程序
@@ -77,6 +89,16 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 
 	// 检查是否为内置命令
 	if builtinFunc, ok := e.builtins[cmdName]; ok {
+		// 如果设置了 -x 选项，显示执行的命令
+		if e.options["x"] {
+			fmt.Fprintf(os.Stderr, "+ %s", cmdName)
+			for _, arg := range cmd.Args {
+				argValue := e.evaluateExpression(arg)
+				fmt.Fprintf(os.Stderr, " %s", argValue)
+			}
+			fmt.Fprintf(os.Stderr, "\n")
+		}
+		
 		args := make([]string, len(cmd.Args))
 		for i, arg := range cmd.Args {
 			args[i] = e.evaluateExpression(arg)
@@ -84,10 +106,19 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 		
 		// 处理内置命令的重定向
 		if len(cmd.Redirects) > 0 {
-			return e.executeBuiltinWithRedirect(cmdName, builtinFunc, args, cmd.Redirects)
+			err := e.executeBuiltinWithRedirect(cmdName, builtinFunc, args, cmd.Redirects)
+			// 如果设置了 -e 选项且命令失败，立即退出
+			if err != nil && e.options["e"] {
+				os.Exit(1)
+			}
+			return err
 		}
 		
 		if err := builtinFunc(args, e.env); err != nil {
+			// 如果设置了 -e 选项且命令失败，立即退出
+			if e.options["e"] {
+				os.Exit(1)
+			}
 			return fmt.Errorf("%s: %v", cmdName, err)
 		}
 		return nil
@@ -98,8 +129,24 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 		return e.executeFunction(fn, cmd.Args)
 	}
 
+	// 如果设置了 -x 选项，显示执行的命令
+	if e.options["x"] {
+		cmdName := e.evaluateExpression(cmd.Command)
+		fmt.Fprintf(os.Stderr, "+ %s", cmdName)
+		for _, arg := range cmd.Args {
+			argValue := e.evaluateExpression(arg)
+			fmt.Fprintf(os.Stderr, " %s", argValue)
+		}
+		fmt.Fprintf(os.Stderr, "\n")
+	}
+	
 	// 执行外部命令
-	return e.executeExternalCommand(cmd)
+	err := e.executeExternalCommand(cmd)
+	// 如果设置了 -e 选项且命令失败，立即退出
+	if err != nil && e.options["e"] {
+		os.Exit(1)
+	}
+	return err
 }
 
 // executeBuiltinWithRedirect 执行带重定向的内置命令
