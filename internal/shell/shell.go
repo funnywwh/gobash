@@ -15,6 +15,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"gobash/internal/executor"
 	"gobash/internal/lexer"
@@ -261,7 +262,7 @@ func (s *Shell) ExecuteReader(reader io.Reader) error {
 		
 		// 如果有未完成的语句，追加当前行
 		if currentStatement.Len() > 0 {
-			currentStatement.WriteString(" ")
+			currentStatement.WriteString("\n")
 			currentStatement.WriteString(originalLine)
 		} else {
 			currentStatement.WriteString(originalLine)
@@ -269,7 +270,8 @@ func (s *Shell) ExecuteReader(reader io.Reader) error {
 		
 		// 检查语句是否完成
 		statement := currentStatement.String()
-		if s.isStatementComplete(statement) {
+		isComplete := s.isStatementComplete(statement)
+		if isComplete {
 			// 执行完整的语句
 			if err := s.executeLine(statement); err != nil {
 				// 输出错误信息到stderr，包含行号
@@ -363,8 +365,33 @@ func (s *Shell) isStatementComplete(statement string) bool {
 	}
 	
 	// 检查for/while语句
+	// 注意：while循环需要do关键字，所以如果whileCount > 0但没有done，且没有do，语句未完成
 	if (forCount + whileCount) > doneCount {
-		return false
+		// 检查是否有do关键字（while循环需要do）
+		// 使用更精确的匹配：do必须是独立的单词
+		doCount := 0
+		// 检查 " do "、" do\n"、";do "、";do\n"、"\ndo "、"\ndo\n" 等
+		doPatterns := []string{" do ", " do\n", ";do ", ";do\n", "\ndo ", "\ndo\n", " do;", "\ndo;"}
+		for _, pattern := range doPatterns {
+			doCount += strings.Count(statement, pattern)
+		}
+		// 也检查行首的do（do在行首）
+		if strings.HasPrefix(strings.TrimSpace(statement), "do ") || 
+		   strings.HasPrefix(strings.TrimSpace(statement), "do\n") {
+			doCount++
+		}
+		// 如果while循环没有do关键字，语句未完成
+		if whileCount > 0 && doCount == 0 && doneCount == 0 {
+			return false
+		}
+		// 如果while循环有do但没有done，语句未完成
+		if whileCount > 0 && doCount > 0 && doneCount == 0 {
+			return false
+		}
+		// 如果for循环没有done，语句未完成
+		if forCount > 0 && doneCount == 0 {
+			return false
+		}
 	}
 	
 	return true
@@ -503,11 +530,44 @@ func (s *Shell) handleSetCommand(args []string) error {
 	}
 	
 	// 处理选项
-	for _, arg := range args {
+	// 检查是否有 -- 参数，如果有，则 -- 后面的所有参数都是位置参数
+	argIndex := 0
+	positionalArgsStart := -1
+	for i, arg := range args {
 		if arg == "--" {
-			// set -- 重置位置参数（这里暂时忽略）
-			continue
+			positionalArgsStart = i + 1
+			break
 		}
+		argIndex++
+	}
+	
+	// 如果找到了 --，处理位置参数
+	if positionalArgsStart >= 0 {
+		// 先清空所有现有的位置参数
+		// 获取当前参数个数，然后删除所有位置参数
+		envMap := s.executor.GetEnvMap()
+		if countStr, ok := envMap["#"]; ok {
+			if count, err := strconv.Atoi(countStr); err == nil && count > 0 {
+				// 删除所有位置参数
+				for i := 1; i <= count; i++ {
+					delete(envMap, fmt.Sprintf("%d", i))
+				}
+			}
+		}
+		
+		// 设置新的位置参数（-- 后面的所有参数）
+		positionalArgs := args[positionalArgsStart:]
+		for i, arg := range positionalArgs {
+			s.executor.SetEnv(fmt.Sprintf("%d", i+1), arg)
+		}
+		s.executor.SetEnv("#", fmt.Sprintf("%d", len(positionalArgs)))
+		s.executor.SetEnv("@", strings.Join(positionalArgs, " "))
+		// 跳过处理 -- 和位置参数
+		args = args[:positionalArgsStart-1]
+	}
+	
+	// 处理选项（跳过已经处理过的 -- 和位置参数）
+	for _, arg := range args {
 		
 		if strings.HasPrefix(arg, "-") || strings.HasPrefix(arg, "+") {
 			// 解析选项，如 -x, -e, +x, +e
@@ -579,12 +639,40 @@ func splitCommands(line string) []string {
 			quoteChar = 0
 			current.WriteByte(ch)
 		} else if ch == ';' && !inQuotes {
-			// 分号且不在引号内，分割命令
-			cmd := strings.TrimSpace(current.String())
-			if cmd != "" {
-				commands = append(commands, cmd)
+			// 检查分号后的单词是否是控制流关键字（do、then等）
+			// 如果是，这个分号不应该分割命令
+			remaining := line[i+1:]
+			remaining = strings.TrimSpace(remaining)
+			// 获取分号后的第一个单词
+			nextWord := ""
+			if len(remaining) > 0 {
+				parts := strings.Fields(remaining)
+				if len(parts) > 0 {
+					nextWord = strings.ToLower(parts[0])
+				}
 			}
-			current.Reset()
+			
+			// 控制流关键字列表（分号后可能出现的）
+			controlFlowAfterSemicolon := []string{"do", "then", "else", "elif"}
+			shouldSplit := true
+			for _, keyword := range controlFlowAfterSemicolon {
+				if nextWord == keyword {
+					shouldSplit = false
+					break
+				}
+			}
+			
+			if shouldSplit {
+				// 分号且不在引号内，分割命令
+				cmd := strings.TrimSpace(current.String())
+				if cmd != "" {
+					commands = append(commands, cmd)
+				}
+				current.Reset()
+			} else {
+				// 分号后是控制流关键字，不分割，将分号作为当前命令的一部分
+				current.WriteByte(ch)
+			}
 		} else {
 			current.WriteByte(ch)
 		}

@@ -2,6 +2,7 @@
 package parser
 
 import (
+	"strconv"
 	"strings"
 	"gobash/internal/lexer"
 )
@@ -77,6 +78,10 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseFunctionStatement()
 	case lexer.CASE:
 		return p.parseCaseStatement()
+	case lexer.BREAK:
+		return p.parseBreakStatement()
+	case lexer.CONTINUE:
+		return p.parseContinueStatement()
 		default:
 		// 检查是否是数组赋值 arr=(1 2 3)
 		// 注意：lexer可能将 arr= 识别为一个IDENTIFIER，所以需要检查是否以 = 结尾
@@ -203,7 +208,7 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 			varName := p.curToken.Literal
 			p.nextToken() // 跳过 VAR
 			p.nextToken() // 跳过 =
-			// 读取值（可能是字符串、标识符等）
+			// 读取值（可能是字符串、标识符、算术展开等）
 			var value strings.Builder
 			for p.curToken.Type != lexer.EOF && 
 			    p.curToken.Type != lexer.NEWLINE && 
@@ -215,6 +220,40 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 					value.WriteString(p.curToken.Literal)
 				} else if p.curToken.Type == lexer.IDENTIFIER {
 					value.WriteString(p.curToken.Literal)
+				} else if p.curToken.Type == lexer.ARITHMETIC_EXPANSION {
+					// 处理算术展开 $((expr))
+					value.WriteString(p.curToken.Literal)
+				} else if p.curToken.Type == lexer.DOLLAR {
+					// 处理 $VAR 或 $((expr)) 的开始
+					value.WriteString("$")
+					if p.peekToken.Type == lexer.LPAREN {
+						// 可能是 $((expr)) 或 $(command)
+						peek2 := p.peekToken
+						p.nextToken() // 移动到 (
+						if p.peekToken.Type == lexer.LPAREN {
+							// $((expr)) 算术展开
+							value.WriteString("((")
+							p.nextToken() // 移动到第二个 (
+							// 读取算术表达式直到 ))
+							for p.curToken.Type != lexer.EOF && 
+							    p.curToken.Type != lexer.NEWLINE {
+								if p.curToken.Type == lexer.RPAREN && 
+								   p.peekToken.Type == lexer.RPAREN {
+									value.WriteString("))")
+									p.nextToken() // 跳过第一个 )
+									p.nextToken() // 跳过第二个 )
+									break
+								}
+								value.WriteString(p.curToken.Literal)
+								p.nextToken()
+							}
+							continue
+						} else {
+							// $(command) 命令替换，恢复
+							p.curToken = peek2
+							break
+						}
+					}
 				} else {
 					break
 				}
@@ -273,13 +312,13 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 		if p.curToken.Type == lexer.RBRACKET {
 			// 将 ] 作为参数添加（test命令需要它）
 			stmt.Args = append(stmt.Args, &Identifier{Value: "]"})
-			p.nextToken()
+			// 不调用 p.nextToken()，让调用者处理 ] 之后的 token
 			break
 		}
 		if p.curToken.Type == lexer.DBL_RBRACKET {
 			// 将 ]] 作为参数添加（[[命令需要它）
 			stmt.Args = append(stmt.Args, &Identifier{Value: "]]"})
-			p.nextToken()
+			// 不调用 p.nextToken()，让调用者处理 ]] 之后的 token
 			break
 		}
 		
@@ -333,6 +372,42 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 		   p.curToken.Type == lexer.SELECT ||
 		   p.curToken.Type == lexer.TIME {
 			stmt.Args = append(stmt.Args, p.parseExpression())
+			// parseExpression 不移动 token，所以 curToken 仍然是当前参数 token
+			// 检查 peekToken 是否是换行符或语句结束标记
+			if p.peekToken.Type == lexer.NEWLINE ||
+			   p.peekToken.Type == lexer.SEMICOLON ||
+			   p.peekToken.Type == lexer.FI ||
+			   p.peekToken.Type == lexer.DONE ||
+			   p.peekToken.Type == lexer.ELSE ||
+			   p.peekToken.Type == lexer.ELIF ||
+			   p.peekToken.Type == lexer.ESAC {
+				// 移动到换行符，然后停止解析
+				p.nextToken()
+				break
+			}
+			// 如果 peekToken 不是换行符，但 curToken 是字符串，且已经解析了至少一个参数
+			// 检查下一个token是否是下一个语句的开始（如标识符、关键字）
+			if (p.curToken.Type == lexer.STRING || 
+			    p.curToken.Type == lexer.STRING_SINGLE || 
+			    p.curToken.Type == lexer.STRING_DOUBLE) &&
+			   len(stmt.Args) > 0 {
+				// 检查 peekToken 是否是下一个语句的开始
+				if p.peekToken.Type == lexer.IDENTIFIER ||
+				   p.peekToken.Type == lexer.IF ||
+				   p.peekToken.Type == lexer.FOR ||
+				   p.peekToken.Type == lexer.WHILE ||
+				   p.peekToken.Type == lexer.CASE {
+					// 检查是否是变量赋值（标识符后跟=）
+					if p.peekToken.Type == lexer.IDENTIFIER {
+						// 需要检查再下一个token是否是=
+						// 但这里我们简化处理：如果peekToken是标识符，且已经解析了参数，停止
+						// 因为变量赋值通常不会出现在命令参数中
+						break
+					}
+					// 如果是关键字，停止解析
+					break
+				}
+			}
 		}
 		
 		// 在移动到下一个token之前，检查下一个token是否是换行符或语句结束标记
@@ -348,17 +423,35 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 			break
 		}
 		
-		// 如果下一个token是标识符（可能是下一个命令），且当前已经解析了至少一个参数，停止解析
-		// 这可以防止将下一个命令解析为当前命令的参数
-		if p.peekToken.Type == lexer.IDENTIFIER && len(stmt.Args) > 0 {
-			// 检查是否是关键字（这些不应该被解析为参数）
-			peekLiteral := p.peekToken.Literal
-			if peekLiteral == "echo" || peekLiteral == "exit" || peekLiteral == "if" ||
-			   peekLiteral == "then" || peekLiteral == "else" || peekLiteral == "elif" ||
-			   peekLiteral == "fi" || peekLiteral == "for" || peekLiteral == "while" ||
-			   peekLiteral == "do" || peekLiteral == "done" || peekLiteral == "case" ||
-			   peekLiteral == "esac" {
+		// 如果当前token是ARITHMETIC_EXPANSION，且下一个token是标识符（可能是变量赋值），停止解析
+		// 例如：echo "test" $((i+1)) i=... 应该停止在 $((i+1)) 处
+		if p.curToken.Type == lexer.ARITHMETIC_EXPANSION && 
+		   p.peekToken.Type == lexer.IDENTIFIER {
+			// 检查是否是变量赋值（下一个token是标识符，再下一个可能是=）
+			// 这里简化处理：如果peekToken是标识符，且已经解析了至少一个参数，停止
+			if len(stmt.Args) > 0 {
 				break
+			}
+		}
+		
+		// 如果下一个token是关键字或标识符（可能是下一个命令），且当前已经解析了至少一个参数，停止解析
+		// 这可以防止将下一个命令解析为当前命令的参数
+		if len(stmt.Args) > 0 {
+			// 检查是否是关键字（这些不应该被解析为参数）
+			if p.peekToken.Type == lexer.CASE || p.peekToken.Type == lexer.IF ||
+			   p.peekToken.Type == lexer.THEN || p.peekToken.Type == lexer.ELSE ||
+			   p.peekToken.Type == lexer.ELIF || p.peekToken.Type == lexer.FI ||
+			   p.peekToken.Type == lexer.FOR || p.peekToken.Type == lexer.WHILE ||
+			   p.peekToken.Type == lexer.DO || p.peekToken.Type == lexer.DONE ||
+			   p.peekToken.Type == lexer.ESAC {
+				break
+			}
+			// 检查是否是标识符（可能是下一个命令）
+			if p.peekToken.Type == lexer.IDENTIFIER {
+				peekLiteral := p.peekToken.Literal
+				if peekLiteral == "echo" || peekLiteral == "exit" {
+					break
+				}
 			}
 		}
 		
@@ -513,7 +606,11 @@ func (p *Parser) parseIfStatement() *IfStatement {
 		stmt.Alternative = p.parseBlockStatement()
 	}
 
-	if p.peekToken.Type == lexer.FI {
+	// 检查并跳过 fi
+	// 注意：parseBlockStatement 在遇到 FI 时会停止，所以 curToken 应该在 FI 上
+	if p.curToken.Type == lexer.FI {
+		p.nextToken() // 跳过 fi
+	} else if p.peekToken.Type == lexer.FI {
 		p.nextToken() // 跳过 fi
 	}
 
@@ -563,15 +660,50 @@ func (p *Parser) parseWhileStatement() *WhileStatement {
 	p.nextToken() // 跳过 while
 
 	stmt.Condition = p.parseCommandStatement()
+	
+	// 如果parseCommandStatement在遇到]]后break，curToken仍然停留在]]上
+	// 需要移动到下一个token（可能是分号或换行符）
+	if p.curToken.Type == lexer.DBL_RBRACKET {
+		p.nextToken()
+	}
 
-	if p.peekToken.Type == lexer.DO {
+	// 跳过可能的分号和换行
+	// 注意：如果curToken是EOF，说明字符串已经结束，无法继续解析
+	if p.curToken.Type == lexer.EOF {
+		// 如果已经是EOF，说明传递给解析器的字符串不完整
+		// 这种情况下，循环体将为空，但我们应该继续解析（让调用者处理）
+	} else {
+		for p.curToken.Type == lexer.SEMICOLON || p.curToken.Type == lexer.NEWLINE || p.curToken.Type == lexer.WHITESPACE {
+			p.nextToken()
+			if p.curToken.Type == lexer.EOF {
+				break
+			}
+		}
+	}
+
+	// 检查是否有 do 关键字
+	if p.curToken.Type == lexer.DO {
+		p.nextToken() // 跳过 do
+	} else if p.peekToken.Type == lexer.DO {
 		p.nextToken() // 跳过 do
 	}
 
-	p.nextToken()
+	// 跳过可能的分号和换行
+	for p.curToken.Type == lexer.SEMICOLON || p.curToken.Type == lexer.NEWLINE || p.curToken.Type == lexer.WHITESPACE {
+		p.nextToken()
+	}
+
 	stmt.Body = p.parseBlockStatement()
 
-	if p.peekToken.Type == lexer.DONE {
+	// 跳过可能的分号和换行
+	for p.curToken.Type == lexer.SEMICOLON || p.curToken.Type == lexer.NEWLINE || p.curToken.Type == lexer.WHITESPACE {
+		p.nextToken()
+	}
+
+	// 检查并跳过 done
+	if p.curToken.Type == lexer.DONE {
+		p.nextToken() // 跳过 done
+	} else if p.peekToken.Type == lexer.DONE {
 		p.nextToken() // 跳过 done
 	}
 
@@ -615,17 +747,27 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 	block := &BlockStatement{}
 	block.Statements = []Statement{}
 
+	stmtCount := 0
 	for p.curToken.Type != lexer.EOF &&
 		p.curToken.Type != lexer.FI &&
 		p.curToken.Type != lexer.DONE &&
 		p.curToken.Type != lexer.ELSE &&
 		p.curToken.Type != lexer.ELIF &&
 		p.curToken.Type != lexer.ESAC {
+		// 如果遇到结束标记，停止解析
+		if p.curToken.Type == lexer.FI ||
+		   p.curToken.Type == lexer.DONE ||
+		   p.curToken.Type == lexer.ELSE ||
+		   p.curToken.Type == lexer.ELIF ||
+		   p.curToken.Type == lexer.ESAC {
+			break
+		}
 		// 跳过空白字符和换行（它们是语句分隔符）
 		if p.curToken.Type == lexer.WHITESPACE || p.curToken.Type == lexer.NEWLINE {
 			p.nextToken()
 			continue
 		}
+		stmtCount++
 		stmt := p.parseStatement()
 		if stmt != nil {
 			block.Statements = append(block.Statements, stmt)
@@ -638,14 +780,91 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 		   p.curToken.Type == lexer.ESAC {
 			break
 		}
+		// 跳过空白字符和换行，准备解析下一个语句
+		// 注意：parseCommandStatement 在遇到 NEWLINE 时会停止，但 curToken 仍然是 NEWLINE
+		// 所以我们需要跳过它
+		if p.curToken.Type == lexer.WHITESPACE || p.curToken.Type == lexer.NEWLINE {
+			p.nextToken()
+			// 跳过 NEWLINE 后，检查是否是结束标记
+			if p.curToken.Type == lexer.FI ||
+			   p.curToken.Type == lexer.DONE ||
+			   p.curToken.Type == lexer.ELSE ||
+			   p.curToken.Type == lexer.ELIF ||
+			   p.curToken.Type == lexer.ESAC {
+				break
+			}
+			continue
+		}
+		// 如果 curToken 是下一个语句的开始（如 BREAK、CONTINUE 等），继续循环解析
+		// 不要调用 p.nextToken()，让下一次循环处理
+		if p.curToken.Type == lexer.BREAK || 
+		   p.curToken.Type == lexer.CONTINUE ||
+		   p.curToken.Type == lexer.IDENTIFIER ||
+		   p.curToken.Type == lexer.IF ||
+		   p.curToken.Type == lexer.FOR ||
+		   p.curToken.Type == lexer.WHILE ||
+		   p.curToken.Type == lexer.CASE {
+			// 这是下一个语句的开始，继续循环
+			continue
+		}
+		// 如果 curToken 不是 NEWLINE 或 WHITESPACE，也不是下一个语句的开始，移动到下一个 token
 		p.nextToken()
 	}
 
 	return block
 }
 
+// parseBreakStatement 解析break语句
+func (p *Parser) parseBreakStatement() *BreakStatement {
+	stmt := &BreakStatement{Level: 1}
+	
+	p.nextToken() // 跳过 break
+	
+	// 检查是否有数字参数（break n）
+	if p.curToken.Type == lexer.NUMBER {
+		// 解析数字
+		if level, err := strconv.Atoi(p.curToken.Literal); err == nil && level > 0 {
+			stmt.Level = level
+		}
+		p.nextToken() // 跳过数字
+	} else if p.curToken.Type == lexer.IDENTIFIER {
+		// 也可能是标识符形式的数字（虽然不常见）
+		if level, err := strconv.Atoi(p.curToken.Literal); err == nil && level > 0 {
+			stmt.Level = level
+			p.nextToken() // 跳过标识符
+		}
+	}
+	
+	return stmt
+}
+
+// parseContinueStatement 解析continue语句
+func (p *Parser) parseContinueStatement() *ContinueStatement {
+	stmt := &ContinueStatement{Level: 1}
+	
+	p.nextToken() // 跳过 continue
+	
+	// 检查是否有数字参数（continue n）
+	if p.curToken.Type == lexer.NUMBER {
+		// 解析数字
+		if level, err := strconv.Atoi(p.curToken.Literal); err == nil && level > 0 {
+			stmt.Level = level
+		}
+		p.nextToken() // 跳过数字
+	} else if p.curToken.Type == lexer.IDENTIFIER {
+		// 也可能是标识符形式的数字（虽然不常见）
+		if level, err := strconv.Atoi(p.curToken.Literal); err == nil && level > 0 {
+			stmt.Level = level
+			p.nextToken() // 跳过标识符
+		}
+	}
+	
+	return stmt
+}
+
 // Errors 返回解析错误
 func (p *Parser) Errors() []string {
 	return p.errors
 }
+
 

@@ -2,6 +2,7 @@
 package executor
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,30 @@ import (
 	"gobash/internal/lexer"
 	"gobash/internal/parser"
 )
+
+// BreakError 表示break语句
+var BreakError = errors.New("break")
+
+// ContinueError 表示continue语句
+var ContinueError = errors.New("continue")
+
+// BreakLevelError 表示带层级的break语句
+type BreakLevelError struct {
+	Level int
+}
+
+func (e *BreakLevelError) Error() string {
+	return fmt.Sprintf("break %d", e.Level)
+}
+
+// ContinueLevelError 表示带层级的continue语句
+type ContinueLevelError struct {
+	Level int
+}
+
+func (e *ContinueLevelError) Error() string {
+	return fmt.Sprintf("continue %d", e.Level)
+}
 
 // Executor 执行器
 // 负责解释执行AST，处理命令执行、管道、重定向、环境变量展开等功能
@@ -98,6 +123,10 @@ func (e *Executor) executeStatement(stmt parser.Statement) error {
 		return e.executeArrayAssignment(s)
 	case *parser.CaseStatement:
 		return e.executeCaseStatement(s)
+	case *parser.BreakStatement:
+		return e.executeBreak(s)
+	case *parser.ContinueStatement:
+		return e.executeContinue(s)
 	default:
 		return fmt.Errorf("unknown statement type: %T", stmt)
 	}
@@ -543,19 +572,55 @@ func (e *Executor) executeIf(stmt *parser.IfStatement) error {
 	// 执行条件命令，检查退出码
 	if err := e.executeCommand(stmt.Condition); err == nil {
 		// 条件成功，执行consequence
-		return e.executeBlock(stmt.Consequence)
+		if err := e.executeBlock(stmt.Consequence); err != nil {
+			// 检查是否是 break/continue 错误，需要向上传播
+			if err == BreakError || err == ContinueError {
+				return err
+			}
+			if _, ok := err.(*BreakLevelError); ok {
+				return err
+			}
+			if _, ok := err.(*ContinueLevelError); ok {
+				return err
+			}
+			return err
+		}
 	}
 
 	// 条件失败，检查elif
 	for _, elif := range stmt.Elif {
 		if err := e.executeCommand(elif.Condition); err == nil {
-			return e.executeBlock(elif.Consequence)
+			if err := e.executeBlock(elif.Consequence); err != nil {
+				// 检查是否是 break/continue 错误，需要向上传播
+				if err == BreakError || err == ContinueError {
+					return err
+				}
+				if _, ok := err.(*BreakLevelError); ok {
+					return err
+				}
+				if _, ok := err.(*ContinueLevelError); ok {
+					return err
+				}
+				return err
+			}
 		}
 	}
 
 	// 执行else
 	if stmt.Alternative != nil {
-		return e.executeBlock(stmt.Alternative)
+		if err := e.executeBlock(stmt.Alternative); err != nil {
+			// 检查是否是 break/continue 错误，需要向上传播
+			if err == BreakError || err == ContinueError {
+				return err
+			}
+			if _, ok := err.(*BreakLevelError); ok {
+				return err
+			}
+			if _, ok := err.(*ContinueLevelError); ok {
+				return err
+			}
+			return err
+		}
 	}
 
 	return nil
@@ -590,6 +655,29 @@ func (e *Executor) executeFor(stmt *parser.ForStatement) error {
 			if value, ok := e.env[key]; ok {
 				e.env[stmt.Variable] = value
 				if err := e.executeBlock(stmt.Body); err != nil {
+					// 检查是否是 break 或 continue
+					if err == BreakError {
+						break
+					}
+					if err == ContinueError {
+						continue
+					}
+					if breakErr, ok := err.(*BreakLevelError); ok {
+						if breakErr.Level <= 1 {
+							break
+						} else {
+							// 需要跳出更多层，向上传播
+							return err
+						}
+					}
+					if continueErr, ok := err.(*ContinueLevelError); ok {
+						if continueErr.Level <= 1 {
+							continue
+						} else {
+							// 需要继续更多层，向上传播
+							return err
+						}
+					}
 					return err
 				}
 			}
@@ -602,6 +690,29 @@ func (e *Executor) executeFor(stmt *parser.ForStatement) error {
 		value := e.evaluateExpression(item)
 		e.env[stmt.Variable] = value
 		if err := e.executeBlock(stmt.Body); err != nil {
+			// 检查是否是 break 或 continue
+			if err == BreakError {
+				break
+			}
+			if err == ContinueError {
+				continue
+			}
+			if breakErr, ok := err.(*BreakLevelError); ok {
+				if breakErr.Level <= 1 {
+					break
+				} else {
+					// 需要跳出更多层，向上传播
+					return err
+				}
+			}
+			if continueErr, ok := err.(*ContinueLevelError); ok {
+				if continueErr.Level <= 1 {
+					continue
+				} else {
+					// 需要继续更多层，向上传播
+					return err
+				}
+			}
 			return err
 		}
 	}
@@ -625,7 +736,8 @@ func (e *Executor) executeWhile(stmt *parser.WhileStatement) error {
 			// 检查是否是退出码错误（ExitError）
 			if exitErr, ok := err.(*exec.ExitError); ok {
 				// 这是正常的退出码，非零表示条件为假
-				if exitErr.ExitCode() != 0 {
+				exitCode := exitErr.ExitCode()
+				if exitCode != 0 {
 					break
 				}
 			} else {
@@ -635,10 +747,42 @@ func (e *Executor) executeWhile(stmt *parser.WhileStatement) error {
 		}
 		// 条件为真，执行循环体（恢复原始的 set -e 状态）
 		e.options["e"] = originalSetE
-		if err := e.executeBlock(stmt.Body); err != nil {
-			// 在循环体中，如果 set -e 启用且出错，应该退出
-			e.options["e"] = originalSetE
-			return err
+		// 检查循环体是否为空
+		if stmt.Body != nil && len(stmt.Body.Statements) > 0 {
+			if err := e.executeBlock(stmt.Body); err != nil {
+				// 检查是否是 break 或 continue
+				if err == BreakError {
+					e.options["e"] = originalSetE
+					break
+				}
+				if err == ContinueError {
+					e.options["e"] = false
+					continue
+				}
+				if breakErr, ok := err.(*BreakLevelError); ok {
+					if breakErr.Level <= 1 {
+						e.options["e"] = originalSetE
+						break
+					} else {
+						// 需要跳出更多层，向上传播
+						e.options["e"] = originalSetE
+						return err
+					}
+				}
+				if continueErr, ok := err.(*ContinueLevelError); ok {
+					if continueErr.Level <= 1 {
+						e.options["e"] = false
+						continue
+					} else {
+						// 需要继续更多层，向上传播
+						e.options["e"] = false
+						return err
+					}
+				}
+				// 在循环体中，如果 set -e 启用且出错，应该退出
+				e.options["e"] = originalSetE
+				return err
+			}
 		}
 		// 再次禁用 set -e 用于下一次条件检查
 		e.options["e"] = false
@@ -648,10 +792,36 @@ func (e *Executor) executeWhile(stmt *parser.WhileStatement) error {
 	return nil
 }
 
+// executeBreak 执行break语句
+func (e *Executor) executeBreak(stmt *parser.BreakStatement) error {
+	if stmt.Level > 1 {
+		return &BreakLevelError{Level: stmt.Level}
+	}
+	return BreakError
+}
+
+// executeContinue 执行continue语句
+func (e *Executor) executeContinue(stmt *parser.ContinueStatement) error {
+	if stmt.Level > 1 {
+		return &ContinueLevelError{Level: stmt.Level}
+	}
+	return ContinueError
+}
+
 // executeBlock 执行代码块
 func (e *Executor) executeBlock(block *parser.BlockStatement) error {
 	for _, stmt := range block.Statements {
 		if err := e.executeStatement(stmt); err != nil {
+			// 传播 break/continue 错误
+			if err == BreakError || err == ContinueError {
+				return err
+			}
+			if _, ok := err.(*BreakLevelError); ok {
+				return err
+			}
+			if _, ok := err.(*ContinueLevelError); ok {
+				return err
+			}
 			return err
 		}
 	}
@@ -920,6 +1090,67 @@ func (e *Executor) evaluateExpression(expr parser.Expression) string {
 		if arr, ok := e.arrays[ex.Name]; ok {
 			return strings.Join(arr, " ")
 		}
+		// 检查是否是特殊变量 $#, $@, $*, $?, $!, $$, $0
+		if ex.Name == "#" {
+			if value, ok := e.env["#"]; ok {
+				return value
+			}
+			return "0"
+		}
+		if ex.Name == "@" {
+			if value, ok := e.env["@"]; ok {
+				return value
+			}
+			return ""
+		}
+		if ex.Name == "*" {
+			if value, ok := e.env["@"]; ok {
+				return value
+			}
+			return ""
+		}
+		if ex.Name == "?" {
+			if value, ok := e.env["?"]; ok {
+				return value
+			}
+			return "0"
+		}
+		if ex.Name == "!" {
+			if value, ok := e.env["!"]; ok {
+				return value
+			}
+			return "0"
+		}
+		if ex.Name == "$" {
+			// $$ 当前进程的PID
+			return fmt.Sprintf("%d", os.Getpid())
+		}
+		if ex.Name == "0" {
+			if value, ok := e.env["0"]; ok {
+				return value
+			}
+			return os.Args[0]
+		}
+		// 检查是否是位置参数 $1, $2, ...
+		if len(ex.Name) > 0 {
+			isAllDigits := true
+			for _, ch := range ex.Name {
+				if ch < '0' || ch > '9' {
+					isAllDigits = false
+					break
+				}
+			}
+			if isAllDigits {
+				if value, ok := e.env[ex.Name]; ok {
+					return value
+				}
+				// 如果设置了 -u 选项，未定义的位置参数应该报错
+				if e.options["u"] {
+					return "__UNDEFINED_VAR__" + ex.Name
+				}
+				return ""
+			}
+		}
 		if value, ok := e.env[ex.Name]; ok {
 			return value
 		}
@@ -1133,6 +1364,11 @@ func (e *Executor) SetEnv(key, value string) {
 func (e *Executor) GetEnv(key string) (string, bool) {
 	value, ok := e.env[key]
 	return value, ok
+}
+
+// GetEnvMap 获取环境变量映射（用于builtin命令）
+func (e *Executor) GetEnvMap() map[string]string {
+	return e.env
 }
 
 // executeFunction 执行函数

@@ -349,6 +349,84 @@ func (l *Lexer) readVariable() Token {
 	startColumn := l.column
 	l.readChar() // 跳过 $
 
+	// 处理特殊变量 $#, $@, $*, $?, $!, $$, $0
+	if l.ch == '#' {
+		l.readChar() // 跳过 #
+		return Token{
+			Type:    VAR,
+			Literal: "#",
+			Line:    startLine,
+			Column:  startColumn,
+		}
+	}
+	if l.ch == '@' {
+		l.readChar() // 跳过 @
+		return Token{
+			Type:    VAR,
+			Literal: "@",
+			Line:    startLine,
+			Column:  startColumn,
+		}
+	}
+	if l.ch == '*' {
+		l.readChar() // 跳过 *
+		return Token{
+			Type:    VAR,
+			Literal: "*",
+			Line:    startLine,
+			Column:  startColumn,
+		}
+	}
+	if l.ch == '?' {
+		l.readChar() // 跳过 ?
+		return Token{
+			Type:    VAR,
+			Literal: "?",
+			Line:    startLine,
+			Column:  startColumn,
+		}
+	}
+	if l.ch == '!' {
+		l.readChar() // 跳过 !
+		return Token{
+			Type:    VAR,
+			Literal: "!",
+			Line:    startLine,
+			Column:  startColumn,
+		}
+	}
+	if l.ch == '$' {
+		l.readChar() // 跳过 $
+		return Token{
+			Type:    VAR,
+			Literal: "$",
+			Line:    startLine,
+			Column:  startColumn,
+		}
+	}
+	if l.ch == '0' {
+		l.readChar() // 跳过 0
+		return Token{
+			Type:    VAR,
+			Literal: "0",
+			Line:    startLine,
+			Column:  startColumn,
+		}
+	}
+	if isDigit(l.ch) {
+		// $1, $2, ... 位置参数
+		position := l.position
+		for isDigit(l.ch) {
+			l.readChar()
+		}
+		return Token{
+			Type:    VAR,
+			Literal: l.input[position:l.position],
+			Line:    startLine,
+			Column:  startColumn,
+		}
+	}
+
 	if l.ch == '{' {
 		// ${VAR} 格式
 		l.readChar() // 跳过 {

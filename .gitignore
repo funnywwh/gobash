@@ -42,3 +42,4 @@ redirect_test*.txt
 C/
 internal/*/C/
 internal/*/Users*/
+gofactorytool

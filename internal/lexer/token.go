@@ -71,6 +71,8 @@ const (
 	CASE
 	ESAC
 	FUNCTION
+	BREAK
+	CONTINUE
 
 	// 其他关键字
 	IN
@@ -159,6 +161,10 @@ func (t TokenType) String() string {
 		return "DONE"
 	case FUNCTION:
 		return "FUNCTION"
+	case BREAK:
+		return "BREAK"
+	case CONTINUE:
+		return "CONTINUE"
 	case COMMAND_SUBSTITUTION:
 		return "COMMAND_SUBSTITUTION"
 	case ARITHMETIC_EXPANSION:
@@ -186,6 +192,8 @@ var keywords = map[string]TokenType{
 	"case":     CASE,
 	"esac":     ESAC,
 	"function": FUNCTION,
+	"break":    BREAK,
+	"continue": CONTINUE,
 	"in":       IN,
 	"select":   SELECT,
 	"time":     TIME,

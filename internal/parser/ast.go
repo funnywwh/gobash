@@ -1,5 +1,7 @@
 package parser
 
+import "fmt"
+
 // Node AST节点接口
 type Node interface {
 	String() string
@@ -164,6 +166,32 @@ func (cs *CaseStatement) String() string {
 type CaseClause struct {
 	Patterns []string // 匹配模式列表（用 | 分隔）
 	Body     *BlockStatement
+}
+
+// BreakStatement break语句
+type BreakStatement struct {
+	Level int // break 的层级，默认为1（跳出1层循环）
+}
+
+func (bs *BreakStatement) statementNode() {}
+func (bs *BreakStatement) String() string {
+	if bs.Level > 1 {
+		return fmt.Sprintf("break %d", bs.Level)
+	}
+	return "break"
+}
+
+// ContinueStatement continue语句
+type ContinueStatement struct {
+	Level int // continue 的层级，默认为1（继续1层循环）
+}
+
+func (cs *ContinueStatement) statementNode() {}
+func (cs *ContinueStatement) String() string {
+	if cs.Level > 1 {
+		return fmt.Sprintf("continue %d", cs.Level)
+	}
+	return "continue"
 }
 
 // Identifier 标识符
