@@ -53,6 +53,93 @@ func New() *Shell {
 
 // Run 运行交互式Shell
 func (s *Shell) Run() {
+	// 配置readline
+	home := os.Getenv("HOME")
+	if home == "" {
+		home = os.Getenv("USERPROFILE")
+	}
+	
+	historyFile := ""
+	if home != "" {
+		historyFile = filepath.Join(home, ".gobash_history")
+	}
+	
+	// 创建readline配置
+	config := &readline.Config{
+		Prompt:          s.prompt,
+		HistoryFile:     historyFile,
+		HistoryLimit:    1000,
+		AutoComplete:    nil, // 暂时不实现自动补全
+		InterruptPrompt: "^C",
+		EOFPrompt:       "exit",
+	}
+	
+	rl, err := readline.NewEx(config)
+	if err != nil {
+		// 如果readline初始化失败，回退到简单的bufio.Scanner
+		s.runSimple()
+		return
+	}
+	defer rl.Close()
+
+	// 加载历史记录到readline
+	for _, cmd := range s.history.GetAll() {
+		rl.AddHistory(cmd)
+	}
+
+	for s.running {
+		// 更新提示符
+		rl.SetPrompt(s.prompt)
+		
+		line, err := rl.ReadLine()
+		if err != nil {
+			if err == readline.ErrInterrupt {
+				// Ctrl+C，继续
+				fmt.Println()
+				continue
+			}
+			// EOF或其他错误，退出
+			break
+		}
+
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		// 处理多行输入（以\结尾）
+		for strings.HasSuffix(line, "\\") {
+			line = strings.TrimSuffix(line, "\\")
+			rl.SetPrompt("> ")
+			nextLine, err := rl.ReadLine()
+			if err != nil {
+				if err == readline.ErrInterrupt {
+					fmt.Println()
+					break
+				}
+				break
+			}
+			line += " " + strings.TrimSpace(nextLine)
+		}
+
+		if err := s.executeLine(line); err != nil {
+			fmt.Fprintf(os.Stderr, "gobash: %v\n", err)
+		} else {
+			// 成功执行的命令添加到历史记录
+			s.history.Add(line)
+			rl.AddHistory(line)
+		}
+		
+		// 更新提示符（工作目录可能已改变）
+		s.prompt = getPrompt()
+	}
+	
+	// 保存历史记录
+	s.saveHistory()
+}
+
+// runSimple 简单的运行模式（当readline不可用时回退）
+func (s *Shell) runSimple() {
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for s.running {
