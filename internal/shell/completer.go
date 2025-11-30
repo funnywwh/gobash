@@ -116,19 +116,8 @@ func (c *Completer) completeVariables(prefix string) ([][]rune, int) {
 	varName := strings.TrimPrefix(prefix, "$")
 	varName = strings.TrimPrefix(varName, "{")
 	
-	// 获取所有环境变量
-	for key := range c.shell.executor.GetEnv() {
-		if strings.HasPrefix(key, varName) {
-			// 如果原始前缀包含{，使用${VAR}格式
-			if strings.HasPrefix(prefix, "${") {
-				matches = append(matches, []rune("${"+key+"}"))
-			} else {
-				matches = append(matches, []rune("$"+key))
-			}
-		}
-	}
-	
-	// 也检查系统环境变量
+	// 检查系统环境变量
+	seen := make(map[string]bool)
 	for _, env := range os.Environ() {
 		parts := strings.SplitN(env, "=", 2)
 		if len(parts) > 0 {
