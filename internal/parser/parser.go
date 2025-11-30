@@ -259,6 +259,11 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 		p.curToken.Type != lexer.ELSE &&
 		p.curToken.Type != lexer.ELIF {
 		
+		// 如果遇到换行符，立即停止解析参数
+		if p.curToken.Type == lexer.NEWLINE {
+			break
+		}
+		
 		// 对于非 [[ 命令，遇到 && 或 || 时停止（这些是命令分隔符）
 		if !isDoubleBracket && (p.curToken.Type == lexer.AND || p.curToken.Type == lexer.OR) {
 			break
@@ -328,10 +333,18 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 		   p.curToken.Type == lexer.SELECT ||
 		   p.curToken.Type == lexer.TIME {
 			stmt.Args = append(stmt.Args, p.parseExpression())
-			// 如果解析表达式后遇到换行符，停止解析参数
-			if p.curToken.Type == lexer.NEWLINE {
-				break
-			}
+		}
+		
+		// 在移动到下一个token之前，检查下一个token是否是换行符或语句结束标记
+		// 如果是，停止解析参数（换行符是语句分隔符）
+		if p.peekToken.Type == lexer.NEWLINE ||
+		   p.peekToken.Type == lexer.SEMICOLON ||
+		   p.peekToken.Type == lexer.FI ||
+		   p.peekToken.Type == lexer.DONE ||
+		   p.peekToken.Type == lexer.ELSE ||
+		   p.peekToken.Type == lexer.ELIF ||
+		   p.peekToken.Type == lexer.ESAC {
+			break
 		}
 		
 		p.nextToken()
@@ -410,6 +423,7 @@ func (p *Parser) parseExpression() Expression {
 	case lexer.STRING, lexer.STRING_SINGLE, lexer.STRING_DOUBLE:
 		// 判断是单引号还是双引号字符串
 		isQuote := p.curToken.Type == lexer.STRING_DOUBLE
+		// 注意：parseExpression 不应该移动 token，所以这里不调用 nextToken
 		return &StringLiteral{Value: p.curToken.Literal, IsQuote: isQuote}
 	case lexer.VAR:
 		return &Variable{Name: p.curToken.Literal}
