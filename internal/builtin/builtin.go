@@ -1061,3 +1061,168 @@ func tailFromStdin(n int) error {
 	return scanner.Err()
 }
 
+// wc 统计行数、字数、字符数
+func wc(args []string, env map[string]string) error {
+	showLines := true
+	showWords := true
+	showChars := true
+	showBytes := false
+	files := []string{}
+	
+	// 解析参数
+	i := 0
+	for i < len(args) {
+		arg := args[i]
+		if strings.HasPrefix(arg, "-") {
+			// 解析选项
+			for _, ch := range arg[1:] {
+				switch ch {
+				case 'l':
+					showLines = true
+					showWords = false
+					showChars = false
+					showBytes = false
+				case 'w':
+					showWords = true
+					showLines = false
+					showChars = false
+					showBytes = false
+				case 'c':
+					showBytes = true
+					showLines = false
+					showWords = false
+					showChars = false
+				case 'm':
+					showChars = true
+					showLines = false
+					showWords = false
+					showBytes = false
+				}
+			}
+		} else {
+			files = append(files, arg)
+		}
+		i++
+	}
+	
+	// 如果没有指定文件，从stdin读取
+	if len(files) == 0 {
+		return wcFromStdin(showLines, showWords, showChars, showBytes, "")
+	}
+	
+	// 处理多个文件
+	totalLines := int64(0)
+	totalWords := int64(0)
+	totalChars := int64(0)
+	totalBytes := int64(0)
+	
+	for _, file := range files {
+		lines, words, chars, bytes, err := wcFromFile(file, showLines, showWords, showChars, showBytes)
+		if err != nil {
+			return err
+		}
+		
+		// 显示统计结果
+		wcPrint(showLines, showWords, showChars, showBytes, lines, words, chars, bytes, file)
+		
+		totalLines += lines
+		totalWords += words
+		totalChars += chars
+		totalBytes += bytes
+	}
+	
+	// 如果有多个文件，显示总计
+	if len(files) > 1 {
+		wcPrint(showLines, showWords, showChars, showBytes, totalLines, totalWords, totalChars, totalBytes, "total")
+	}
+	
+	return nil
+}
+
+// wcFromFile 统计文件
+func wcFromFile(filename string, showLines, showWords, showChars, showBytes bool) (int64, int64, int64, int64, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("wc: %v", err)
+	}
+	defer file.Close()
+	
+	scanner := bufio.NewScanner(file)
+	lines := int64(0)
+	words := int64(0)
+	chars := int64(0)
+	bytes := int64(0)
+	
+	for scanner.Scan() {
+		line := scanner.Text()
+		lines++
+		words += int64(len(strings.Fields(line)))
+		chars += int64(len(line)) + 1 // +1 for newline
+		bytes += int64(len(line)) + 1
+	}
+	
+	if err := scanner.Err(); err != nil {
+		return 0, 0, 0, 0, err
+	}
+	
+	return lines, words, chars, bytes, nil
+}
+
+// wcFromStdin 从stdin统计
+func wcFromStdin(showLines, showWords, showChars, showBytes bool, filename string) error {
+	scanner := bufio.NewScanner(os.Stdin)
+	lines := int64(0)
+	words := int64(0)
+	chars := int64(0)
+	bytes := int64(0)
+	
+	for scanner.Scan() {
+		line := scanner.Text()
+		lines++
+		words += int64(len(strings.Fields(line)))
+		chars += int64(len(line)) + 1 // +1 for newline
+		bytes += int64(len(line)) + 1
+	}
+	
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	
+	wcPrint(showLines, showWords, showChars, showBytes, lines, words, chars, bytes, filename)
+	return nil
+}
+
+// wcPrint 打印统计结果
+func wcPrint(showLines, showWords, showChars, showBytes bool, lines, words, chars, bytes int64, filename string) {
+	parts := []string{}
+	
+	if showLines {
+		parts = append(parts, fmt.Sprintf("%8d", lines))
+	}
+	if showWords {
+		parts = append(parts, fmt.Sprintf("%8d", words))
+	}
+	if showBytes {
+		parts = append(parts, fmt.Sprintf("%8d", bytes))
+	}
+	if showChars {
+		parts = append(parts, fmt.Sprintf("%8d", chars))
+	}
+	
+	// 如果所有选项都关闭，默认显示所有
+	if !showLines && !showWords && !showChars && !showBytes {
+		parts = []string{
+			fmt.Sprintf("%8d", lines),
+			fmt.Sprintf("%8d", words),
+			fmt.Sprintf("%8d", bytes),
+		}
+	}
+	
+	result := strings.Join(parts, " ")
+	if filename != "" {
+		result += " " + filename
+	}
+	
+	fmt.Println(result)
+}
+
