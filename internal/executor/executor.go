@@ -16,23 +16,27 @@ import (
 // Executor 执行器
 // 负责解释执行AST，处理命令执行、管道、重定向、环境变量展开等功能
 type Executor struct {
-	env       map[string]string
-	arrays    map[string][]string // 数组存储：数组名 -> 元素列表
-	builtins  map[string]builtin.BuiltinFunc
-	functions map[string]*parser.FunctionStatement
-	options   map[string]bool // shell选项状态
-	jobs      *JobManager     // 作业管理器
+	env            map[string]string
+	arrays         map[string][]string            // 数组存储：数组名 -> 元素列表
+	assocArrays    map[string]map[string]string   // 关联数组存储：数组名 -> (键 -> 值)
+	arrayTypes     map[string]string              // 数组类型：数组名 -> "array" 或 "assoc"
+	builtins       map[string]builtin.BuiltinFunc
+	functions      map[string]*parser.FunctionStatement
+	options        map[string]bool // shell选项状态
+	jobs           *JobManager     // 作业管理器
 }
 
 // New 创建新的执行器
 func New() *Executor {
 	e := &Executor{
-		env:       make(map[string]string),
-		arrays:    make(map[string][]string),
-		builtins:  builtin.GetBuiltins(),
-		functions: make(map[string]*parser.FunctionStatement),
-		options:   make(map[string]bool),
-		jobs:      NewJobManager(),
+		env:         make(map[string]string),
+		arrays:      make(map[string][]string),
+		assocArrays: make(map[string]map[string]string),
+		arrayTypes:  make(map[string]string),
+		builtins:    builtin.GetBuiltins(),
+		functions:   make(map[string]*parser.FunctionStatement),
+		options:     make(map[string]bool),
+		jobs:        NewJobManager(),
 	}
 	// 初始化环境变量
 	for _, env := range os.Environ() {
@@ -103,6 +107,11 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 		return fmt.Errorf("命令名为空")
 	}
 
+	// 检查是否是关联数组赋值 arr[key]=value
+	if strings.Contains(cmdName, "[") && strings.Contains(cmdName, "]") && strings.Contains(cmdName, "=") {
+		return e.executeAssocArrayAssignment(cmdName, cmd.Args)
+	}
+
 	// 检查是否为内置命令
 	if builtinFunc, ok := e.builtins[cmdName]; ok {
 		args := make([]string, len(cmd.Args))
@@ -147,6 +156,25 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 			}
 			return fmt.Errorf("%s: %v", cmdName, err)
 		}
+		
+		// 处理declare命令的特殊情况
+		if cmdName == "declare" {
+			// 检查是否声明了关联数组
+			if assocName, ok := e.env["__WBASH_DECLARE_ASSOC__"]; ok {
+				// 初始化关联数组
+				if e.assocArrays[assocName] == nil {
+					e.assocArrays[assocName] = make(map[string]string)
+				}
+				e.arrayTypes[assocName] = "assoc"
+				delete(e.env, "__WBASH_DECLARE_ASSOC__")
+			}
+			// 检查是否声明了普通变量
+			if varName, ok := e.env["__WBASH_DECLARE_VAR__"]; ok {
+				e.arrayTypes[varName] = "var"
+				delete(e.env, "__WBASH_DECLARE_VAR__")
+			}
+		}
+		
 		return nil
 	}
 
@@ -528,10 +556,11 @@ func (e *Executor) executeArrayAssignment(stmt *parser.ArrayAssignmentStatement)
 }
 
 // getArrayElement 获取数组元素
-// 支持 ${arr[0]} 和 $arr[0] 格式
+// 支持 ${arr[0]} 和 $arr[0] 格式（普通数组）
+// 支持 ${arr[key]} 和 $arr[key] 格式（关联数组）
 func (e *Executor) getArrayElement(varExpr string) string {
 	// 解析数组名和索引
-	// 格式：arr[0] 或 arr[1]
+	// 格式：arr[0] 或 arr[key]
 	idx := strings.Index(varExpr, "[")
 	if idx == -1 {
 		return ""
@@ -543,13 +572,33 @@ func (e *Executor) getArrayElement(varExpr string) string {
 	}
 	indexStr := varExpr[idx+1 : idxEnd]
 	
-	// 解析索引
+	// 检查是否是关联数组
+	if arrayType, ok := e.arrayTypes[arrName]; ok && arrayType == "assoc" {
+		// 关联数组：使用字符串键
+		assocArr, ok := e.assocArrays[arrName]
+		if !ok {
+			if e.options["u"] {
+				return "__UNDEFINED_VAR__" + arrName
+			}
+			return ""
+		}
+		// 展开键中的变量
+		key := e.expandVariablesInString(indexStr)
+		return assocArr[key]
+	}
+	
+	// 普通数组：尝试解析为数字索引
 	index, err := strconv.Atoi(indexStr)
 	if err != nil {
+		// 如果不是数字，可能是关联数组但未声明类型，尝试作为字符串键
+		if assocArr, ok := e.assocArrays[arrName]; ok {
+			key := e.expandVariablesInString(indexStr)
+			return assocArr[key]
+		}
 		return ""
 	}
 	
-	// 获取数组
+	// 获取普通数组
 	arr, ok := e.arrays[arrName]
 	if !ok {
 		// 如果设置了 -u 选项，未定义的数组应该报错
@@ -565,6 +614,76 @@ func (e *Executor) getArrayElement(varExpr string) string {
 	}
 	
 	return arr[index]
+}
+
+// executeAssocArrayAssignment 执行关联数组单个元素赋值
+// 例如：arr[key]=value
+func (e *Executor) executeAssocArrayAssignment(assignment string, args []parser.Expression) error {
+	// 解析 arr[key]=value 格式
+	eqIdx := strings.Index(assignment, "=")
+	if eqIdx == -1 {
+		return fmt.Errorf("无效的赋值语句: %s", assignment)
+	}
+	
+	leftSide := assignment[:eqIdx]
+	rightSide := assignment[eqIdx+1:]
+	
+	// 解析 arr[key]
+	idx := strings.Index(leftSide, "[")
+	if idx == -1 {
+		return fmt.Errorf("无效的数组赋值: %s", assignment)
+	}
+	arrName := leftSide[:idx]
+	idxEnd := strings.Index(leftSide, "]")
+	if idxEnd == -1 {
+		return fmt.Errorf("无效的数组赋值: %s", assignment)
+	}
+	keyStr := leftSide[idx+1 : idxEnd]
+	
+	// 获取值（如果有参数，使用第一个参数；否则使用rightSide）
+	value := rightSide
+	if len(args) > 0 {
+		value = e.evaluateExpression(args[0])
+	}
+	
+	// 检查是否是关联数组
+	if arrayType, ok := e.arrayTypes[arrName]; ok && arrayType == "assoc" {
+		// 确保关联数组已初始化
+		if e.assocArrays[arrName] == nil {
+			e.assocArrays[arrName] = make(map[string]string)
+		}
+		// 展开键中的变量
+		key := e.expandVariablesInString(keyStr)
+		e.assocArrays[arrName][key] = value
+		return nil
+	}
+	
+	// 如果不是关联数组，尝试作为普通数组处理（数字索引）
+	index, err := strconv.Atoi(keyStr)
+	if err == nil {
+		// 数字索引，作为普通数组处理
+		if e.arrays[arrName] == nil {
+			e.arrays[arrName] = make([]string, 0)
+		}
+		// 扩展数组以容纳索引
+		if index >= len(e.arrays[arrName]) {
+			newArr := make([]string, index+1)
+			copy(newArr, e.arrays[arrName])
+			e.arrays[arrName] = newArr
+		}
+		e.arrays[arrName][index] = value
+		e.arrayTypes[arrName] = "array"
+		return nil
+	}
+	
+	// 既不是关联数组也不是数字索引，创建关联数组
+	if e.assocArrays[arrName] == nil {
+		e.assocArrays[arrName] = make(map[string]string)
+	}
+	e.arrayTypes[arrName] = "assoc"
+	key := e.expandVariablesInString(keyStr)
+	e.assocArrays[arrName][key] = value
+	return nil
 }
 
 // evaluateExpression 求值表达式

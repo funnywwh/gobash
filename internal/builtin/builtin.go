@@ -68,6 +68,7 @@ func init() {
 	builtins["jobs"] = jobs
 	builtins["fg"] = fg
 	builtins["bg"] = bg
+	builtins["declare"] = declare
 }
 
 // GetBuiltins 获取所有内置命令
@@ -747,6 +748,39 @@ func trueCmd(args []string, env map[string]string) error {
 // falseCmd 总是失败返回
 func falseCmd(args []string, env map[string]string) error {
 	return fmt.Errorf("false")
+}
+
+// declare 声明变量或数组
+// 支持 -A 选项声明关联数组
+// 例如：declare -A arr
+func declare(args []string, env map[string]string) error {
+	if len(args) == 0 {
+		// 显示所有变量（简化实现）
+		return nil
+	}
+	
+	assocArray := false
+	var varName string
+	
+	// 解析参数
+	for _, arg := range args {
+		if arg == "-A" {
+			assocArray = true
+		} else if !strings.HasPrefix(arg, "-") {
+			varName = arg
+		}
+	}
+	
+	if varName != "" {
+		// 通过环境变量传递关联数组声明信息
+		if assocArray {
+			env["__WBASH_DECLARE_ASSOC__"] = varName
+		} else {
+			env["__WBASH_DECLARE_VAR__"] = varName
+		}
+	}
+	
+	return nil
 }
 
 // testCmd 测试条件（test命令和[命令）
