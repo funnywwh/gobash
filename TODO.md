@@ -116,7 +116,7 @@ if len(stmt.In) == 0 {
 ### 5. ✅ 更多测试用例和文档 - **部分完成**
 **状态**: 已添加示例脚本和使用文档
 **已完成**:
-- ✅ 示例脚本（basic.sh, text_processing.sh, advanced.sh）
+- ✅ 示例脚本（basic.sh, text_processing.sh, advanced.sh, job_control.sh）
 - ✅ 使用文档（README_EXAMPLES.md）
 - ⏳ 单元测试（待实现）
 - ⏳ 集成测试（待实现）
@@ -170,6 +170,7 @@ if len(stmt.In) == 0 {
 - ✅ 修复了fg命令中的进程Wait问题（避免重复Wait）
 - ✅ 优化了作业管理的goroutine实现
 - ✅ 改进了代码质量和错误处理
+- ✅ 创建了作业控制功能示例脚本（job_control.sh）
 
 ### 待实现的功能
 - ⏳ 单元测试和集成测试

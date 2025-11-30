@@ -476,6 +476,7 @@ gobash/
 - `examples/basic.sh` - 基础功能示例（变量、命令替换、循环、函数等）
 - `examples/text_processing.sh` - 文本处理命令示例（head, tail, grep, sort等）
 - `examples/advanced.sh` - 高级功能示例（set选项、函数参数等）
+- `examples/job_control.sh` - 作业控制功能示例（后台任务、jobs、fg、bg）
 
 运行示例：
 
@@ -483,6 +484,7 @@ gobash/
 gobash.exe examples/basic.sh
 gobash.exe examples/text_processing.sh
 gobash.exe examples/advanced.sh
+gobash.exe examples/job_control.sh
 ```
 
 ### 详细文档
