@@ -328,6 +328,10 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 		   p.curToken.Type == lexer.SELECT ||
 		   p.curToken.Type == lexer.TIME {
 			stmt.Args = append(stmt.Args, p.parseExpression())
+			// 如果解析表达式后遇到换行符，停止解析参数
+			if p.curToken.Type == lexer.NEWLINE {
+				break
+			}
 		}
 		
 		p.nextToken()
@@ -588,9 +592,22 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 		p.curToken.Type != lexer.ELSE &&
 		p.curToken.Type != lexer.ELIF &&
 		p.curToken.Type != lexer.ESAC {
+		// 跳过空白字符和换行（它们是语句分隔符）
+		if p.curToken.Type == lexer.WHITESPACE || p.curToken.Type == lexer.NEWLINE {
+			p.nextToken()
+			continue
+		}
 		stmt := p.parseStatement()
 		if stmt != nil {
 			block.Statements = append(block.Statements, stmt)
+		}
+		// 如果解析后遇到结束标记，停止解析
+		if p.curToken.Type == lexer.FI ||
+		   p.curToken.Type == lexer.DONE ||
+		   p.curToken.Type == lexer.ELSE ||
+		   p.curToken.Type == lexer.ELIF ||
+		   p.curToken.Type == lexer.ESAC {
+			break
 		}
 		p.nextToken()
 	}

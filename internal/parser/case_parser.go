@@ -76,8 +76,14 @@ func (p *Parser) parseCaseStatement() *CaseStatement {
 				break
 			}
 			
-			// 跳过换行和空白
-			if p.curToken.Type == lexer.NEWLINE || p.curToken.Type == lexer.WHITESPACE {
+			// 跳过空白（但保留换行符，因为它是语句分隔符）
+			if p.curToken.Type == lexer.WHITESPACE {
+				p.nextToken()
+				continue
+			}
+			
+			// 如果遇到换行符，移动到下一个token（换行符是语句分隔符）
+			if p.curToken.Type == lexer.NEWLINE {
 				p.nextToken()
 				continue
 			}
@@ -127,6 +133,10 @@ func (p *Parser) parseCaseStatement() *CaseStatement {
 			// 如果当前token已经是下一个case模式的一部分，不要nextToken
 			if p.curToken.Type == lexer.ESAC {
 				break
+			}
+			// 如果遇到换行符，移动到下一个token（换行符是语句分隔符）
+			if p.curToken.Type == lexer.NEWLINE {
+				p.nextToken()
 			}
 			p.nextToken()
 		}
