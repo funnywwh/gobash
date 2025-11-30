@@ -106,8 +106,17 @@ func pwd(args []string, env map[string]string) error {
 
 // echo 打印参数
 func echo(args []string, env map[string]string) error {
+	if len(args) == 0 {
+		fmt.Println()
+		return nil
+	}
 	output := strings.Join(args, " ")
-	fmt.Println(output)
+	// 如果输出为空字符串，至少打印一个换行
+	if output == "" {
+		fmt.Println()
+	} else {
+		fmt.Println(output)
+	}
 	return nil
 }
 

@@ -416,6 +416,11 @@ func (e *Executor) evaluateExpression(expr parser.Expression) string {
 
 // expandVariablesInString 展开字符串中的变量（如 "TEST=$TEST"）
 func (e *Executor) expandVariablesInString(s string) string {
+	// 如果字符串为空，直接返回
+	if len(s) == 0 {
+		return ""
+	}
+	
 	var result strings.Builder
 	i := 0
 	for i < len(s) {

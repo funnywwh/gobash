@@ -95,7 +95,10 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 	stmt := &CommandStatement{}
 
 	// 解析命令
-	if p.curToken.Type == lexer.IDENTIFIER || p.curToken.Type == lexer.STRING {
+	if p.curToken.Type == lexer.IDENTIFIER || 
+	   p.curToken.Type == lexer.STRING ||
+	   p.curToken.Type == lexer.STRING_SINGLE ||
+	   p.curToken.Type == lexer.STRING_DOUBLE {
 		stmt.Command = p.parseExpression()
 		p.nextToken()
 	}
@@ -130,6 +133,8 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 		// 解析参数
 		if p.curToken.Type == lexer.IDENTIFIER || 
 		   p.curToken.Type == lexer.STRING ||
+		   p.curToken.Type == lexer.STRING_SINGLE ||
+		   p.curToken.Type == lexer.STRING_DOUBLE ||
 		   p.curToken.Type == lexer.VAR ||
 		   p.curToken.Type == lexer.DOLLAR ||
 		   p.curToken.Type == lexer.NUMBER {
@@ -186,7 +191,10 @@ func (p *Parser) parseRedirect() *Redirect {
 
 	// 读取目标文件
 	p.nextToken()
-	if p.curToken.Type == lexer.IDENTIFIER || p.curToken.Type == lexer.STRING {
+	if p.curToken.Type == lexer.IDENTIFIER || 
+	   p.curToken.Type == lexer.STRING ||
+	   p.curToken.Type == lexer.STRING_SINGLE ||
+	   p.curToken.Type == lexer.STRING_DOUBLE {
 		redirect.Target = p.parseExpression()
 	} else {
 		// 重定向目标缺失
