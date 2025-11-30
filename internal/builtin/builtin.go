@@ -43,6 +43,8 @@ func init() {
 	builtins["false"] = falseCmd
 	builtins["test"] = testCmd
 	builtins["["] = testCmd // [ 是 test 的别名，但需要处理结尾的 ]
+	builtins["head"] = head
+	builtins["tail"] = tail
 }
 
 // GetBuiltins 获取所有内置命令
