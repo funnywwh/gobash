@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/user"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,6 +37,10 @@ func init() {
 	builtins["alias"] = alias
 	builtins["unalias"] = unalias
 	builtins["history"] = history
+	builtins["which"] = which
+	builtins["type"] = typeCmd
+	builtins["true"] = trueCmd
+	builtins["false"] = falseCmd
 }
 
 // GetBuiltins 获取所有内置命令
@@ -570,5 +575,122 @@ func unalias(args []string, env map[string]string) error {
 func history(args []string, env map[string]string) error {
 	// history命令由shell直接处理，这里只是占位
 	return nil
+}
+
+// which 查找命令路径
+func which(args []string, env map[string]string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("which: 缺少操作数")
+	}
+
+	for _, cmdName := range args {
+		// 检查是否为内置命令
+		if _, ok := builtins[cmdName]; ok {
+			fmt.Printf("%s: shell builtin\n", cmdName)
+			continue
+		}
+
+		// 检查PATH环境变量
+		pathEnv := os.Getenv("PATH")
+		if pathEnv == "" {
+			continue
+		}
+
+		paths := strings.Split(pathEnv, ":")
+		if len(paths) == 0 {
+			// Windows使用分号分隔
+			paths = strings.Split(pathEnv, ";")
+		}
+
+		found := false
+		for _, path := range paths {
+			if path == "" {
+				continue
+			}
+			fullPath := filepath.Join(path, cmdName)
+			// Windows需要添加.exe扩展名
+			if _, err := os.Stat(fullPath); err == nil {
+				fmt.Println(fullPath)
+				found = true
+				break
+			}
+			// 尝试添加.exe
+			if _, err := os.Stat(fullPath + ".exe"); err == nil {
+				fmt.Println(fullPath + ".exe")
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			// 命令未找到，但不报错（与bash行为一致）
+		}
+	}
+
+	return nil
+}
+
+// typeCmd 显示命令类型
+func typeCmd(args []string, env map[string]string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("type: 缺少操作数")
+	}
+
+	for _, cmdName := range args {
+		// 检查是否为内置命令
+		if _, ok := builtins[cmdName]; ok {
+			fmt.Printf("%s is a shell builtin\n", cmdName)
+			continue
+		}
+
+		// 检查是否为别名（通过环境变量，实际由shell处理）
+		// 这里简化处理，只检查内置命令和外部命令
+
+		// 检查PATH环境变量
+		pathEnv := os.Getenv("PATH")
+		if pathEnv != "" {
+			paths := strings.Split(pathEnv, ":")
+			if len(paths) == 0 {
+				paths = strings.Split(pathEnv, ";")
+			}
+
+			found := false
+			for _, path := range paths {
+				if path == "" {
+					continue
+				}
+				fullPath := filepath.Join(path, cmdName)
+				if _, err := os.Stat(fullPath); err == nil {
+					fmt.Printf("%s is %s\n", cmdName, fullPath)
+					found = true
+					break
+				}
+				if _, err := os.Stat(fullPath + ".exe"); err == nil {
+					fmt.Printf("%s is %s\n", cmdName, fullPath+".exe")
+					found = true
+					break
+				}
+			}
+
+			if found {
+				continue
+			}
+		}
+
+		// 命令未找到
+		fmt.Printf("type: %s: not found\n", cmdName)
+	}
+
+	return nil
+}
+
+// trueCmd 总是成功返回
+func trueCmd(args []string, env map[string]string) error {
+	return nil
+}
+
+// falseCmd 总是失败返回
+func falseCmd(args []string, env map[string]string) error {
+	return fmt.Errorf("false")
 }
 
