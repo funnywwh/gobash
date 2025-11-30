@@ -406,7 +406,7 @@ gobash/
 - [ ] 更多Bash特性（数组、关联数组、进程替换等）
 - [ ] 作业控制（后台任务、fg, bg, jobs）
 - [x] 更多内置命令（head, tail, wc, grep, sort, uniq, cut）
-- [ ] 更多测试用例和文档
+- [x] 更多测试用例和文档（示例脚本和使用文档）
 
 ## 技术实现
 
@@ -426,6 +426,28 @@ gobash/
 2. **内置命令重定向**：通过临时替换os.Stdin/Stdout/Stderr实现
 3. **文件名解析**：正确处理包含点号、连字符等特殊字符的文件名
 4. **脚本执行**：自动识别并跳过shebang行和注释行
+
+## 示例和文档
+
+### 示例脚本
+
+项目包含多个示例脚本，演示 gobash 的各种功能：
+
+- `examples/basic.sh` - 基础功能示例（变量、命令替换、循环、函数等）
+- `examples/text_processing.sh` - 文本处理命令示例（head, tail, grep, sort等）
+- `examples/advanced.sh` - 高级功能示例（set选项、函数参数等）
+
+运行示例：
+
+```bash
+gobash.exe examples/basic.sh
+gobash.exe examples/text_processing.sh
+gobash.exe examples/advanced.sh
+```
+
+### 详细文档
+
+查看 [README_EXAMPLES.md](README_EXAMPLES.md) 了解详细的使用示例和最佳实践。
 
 ## 许可证
 
