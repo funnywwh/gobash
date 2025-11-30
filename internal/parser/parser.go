@@ -202,10 +202,9 @@ func (p *Parser) parseExpression() Expression {
 	switch p.curToken.Type {
 	case lexer.IDENTIFIER:
 		return &Identifier{Value: p.curToken.Literal}
-	case lexer.STRING:
-		// 判断是否为双引号字符串（需要展开变量）
-		// 简化处理：如果包含 $ 则认为是双引号字符串
-		isQuote := strings.Contains(p.curToken.Literal, "$")
+	case lexer.STRING, lexer.STRING_SINGLE, lexer.STRING_DOUBLE:
+		// 判断是单引号还是双引号字符串
+		isQuote := p.curToken.Type == lexer.STRING_DOUBLE
 		return &StringLiteral{Value: p.curToken.Literal, IsQuote: isQuote}
 	case lexer.VAR:
 		return &Variable{Name: p.curToken.Literal}
