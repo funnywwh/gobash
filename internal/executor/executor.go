@@ -89,19 +89,24 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 
 	// 检查是否为内置命令
 	if builtinFunc, ok := e.builtins[cmdName]; ok {
+		args := make([]string, len(cmd.Args))
+		for i, arg := range cmd.Args {
+			argValue := e.evaluateExpression(arg)
+			// 检查未定义的变量（set -u）
+			if strings.HasPrefix(argValue, "__UNDEFINED_VAR__") {
+				varName := strings.TrimPrefix(argValue, "__UNDEFINED_VAR__")
+				return fmt.Errorf("未定义的变量: %s", varName)
+			}
+			args[i] = argValue
+		}
+		
 		// 如果设置了 -x 选项，显示执行的命令
 		if e.options["x"] {
 			fmt.Fprintf(os.Stderr, "+ %s", cmdName)
-			for _, arg := range cmd.Args {
-				argValue := e.evaluateExpression(arg)
-				fmt.Fprintf(os.Stderr, " %s", argValue)
+			for _, arg := range args {
+				fmt.Fprintf(os.Stderr, " %s", arg)
 			}
 			fmt.Fprintf(os.Stderr, "\n")
-		}
-		
-		args := make([]string, len(cmd.Args))
-		for i, arg := range cmd.Args {
-			args[i] = e.evaluateExpression(arg)
 		}
 		
 		// 处理内置命令的重定向
@@ -224,7 +229,13 @@ func (e *Executor) executeExternalCommand(cmd *parser.CommandStatement) error {
 	// 构建参数
 	args := make([]string, len(cmd.Args))
 	for i, arg := range cmd.Args {
-		args[i] = e.evaluateExpression(arg)
+		argValue := e.evaluateExpression(arg)
+		// 检查未定义的变量（set -u）
+		if strings.HasPrefix(argValue, "__UNDEFINED_VAR__") {
+			varName := strings.TrimPrefix(argValue, "__UNDEFINED_VAR__")
+			return fmt.Errorf("未定义的变量: %s", varName)
+		}
+		args[i] = argValue
 	}
 
 	// 创建命令
@@ -477,12 +488,35 @@ func (e *Executor) evaluateExpression(expr parser.Expression) string {
 	case *parser.StringLiteral:
 		// 只有双引号字符串才展开变量，单引号字符串不展开
 		if ex.IsQuote {
-			return e.expandVariablesInString(ex.Value)
+			result := e.expandVariablesInString(ex.Value)
+			// 检查未定义的变量（set -u）
+			if strings.Contains(result, "__UNDEFINED_VAR__") {
+				// 提取第一个未定义的变量名
+				start := strings.Index(result, "__UNDEFINED_VAR__")
+				if start != -1 {
+					rest := result[start+len("__UNDEFINED_VAR__"):]
+					varName := ""
+					for _, ch := range rest {
+						if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' {
+							varName += string(ch)
+						} else {
+							break
+						}
+					}
+					return "__UNDEFINED_VAR__" + varName
+				}
+			}
+			return result
 		}
 		return ex.Value
 	case *parser.Variable:
 		if value, ok := e.env[ex.Name]; ok {
 			return value
+		}
+		// 如果设置了 -u 选项，未定义的变量应该报错
+		if e.options["u"] {
+			// 返回特殊标记，让调用者知道变量未定义
+			return "__UNDEFINED_VAR__" + ex.Name
 		}
 		return ""
 	default:
@@ -520,6 +554,9 @@ func (e *Executor) expandVariablesInString(s string) string {
 					// 展开变量
 					if value, ok := e.env[varName.String()]; ok {
 						result.WriteString(value)
+					} else if e.options["u"] {
+						// 如果设置了 -u 选项，未定义的变量返回特殊标记
+						result.WriteString("__UNDEFINED_VAR__" + varName.String())
 					}
 					continue
 				}
@@ -533,6 +570,9 @@ func (e *Executor) expandVariablesInString(s string) string {
 				// 展开变量
 				if value, ok := e.env[varName.String()]; ok {
 					result.WriteString(value)
+				} else if e.options["u"] {
+					// 如果设置了 -u 选项，未定义的变量返回特殊标记
+					result.WriteString("__UNDEFINED_VAR__" + varName.String())
 				}
 				continue
 			}
