@@ -81,6 +81,12 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 		for i, arg := range cmd.Args {
 			args[i] = e.evaluateExpression(arg)
 		}
+		
+		// 处理内置命令的重定向
+		if len(cmd.Redirects) > 0 {
+			return e.executeBuiltinWithRedirect(cmdName, builtinFunc, args, cmd.Redirects)
+		}
+		
 		if err := builtinFunc(args, e.env); err != nil {
 			return fmt.Errorf("%s: %v", cmdName, err)
 		}
@@ -94,6 +100,71 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 
 	// 执行外部命令
 	return e.executeExternalCommand(cmd)
+}
+
+// executeBuiltinWithRedirect 执行带重定向的内置命令
+func (e *Executor) executeBuiltinWithRedirect(cmdName string, builtinFunc builtin.BuiltinFunc, args []string, redirects []*parser.Redirect) error {
+	// 保存原始的stdout和stderr
+	oldStdout := os.Stdout
+	oldStderr := os.Stderr
+	
+	// 处理重定向
+	var files []*os.File
+	defer func() {
+		// 恢复原始的stdout和stderr
+		os.Stdout = oldStdout
+		os.Stderr = oldStderr
+		// 关闭所有打开的文件
+		for _, f := range files {
+			f.Close()
+		}
+	}()
+	
+	for _, redirect := range redirects {
+		target := e.evaluateExpression(redirect.Target)
+		if target == "" {
+			return fmt.Errorf("redirect target is empty")
+		}
+		
+		switch redirect.Type {
+		case parser.REDIRECT_OUTPUT:
+			file, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+			if err != nil {
+				return fmt.Errorf("重定向错误: %v", err)
+			}
+			files = append(files, file)
+			if redirect.FD == 1 {
+				os.Stdout = file
+			} else if redirect.FD == 2 {
+				os.Stderr = file
+			}
+		case parser.REDIRECT_APPEND:
+			file, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+			if err != nil {
+				return fmt.Errorf("重定向错误: %v", err)
+			}
+			files = append(files, file)
+			if redirect.FD == 1 {
+				os.Stdout = file
+			} else if redirect.FD == 2 {
+				os.Stderr = file
+			}
+		case parser.REDIRECT_INPUT:
+			file, err := os.Open(target)
+			if err != nil {
+				return fmt.Errorf("重定向错误: %v", err)
+			}
+			files = append(files, file)
+			os.Stdin = file
+		}
+	}
+	
+	// 执行内置命令
+	if err := builtinFunc(args, e.env); err != nil {
+		return fmt.Errorf("%s: %v", cmdName, err)
+	}
+	
+	return nil
 }
 
 // executeExternalCommand 执行外部命令
@@ -348,7 +419,11 @@ func (e *Executor) expandVariablesInString(s string) string {
 	var result strings.Builder
 	i := 0
 	for i < len(s) {
-		if s[i] == '$' && i+1 < len(s) {
+		if s[i] == '\\' && i+1 < len(s) && s[i+1] == '$' {
+			// 转义的 $，保留为 $
+			result.WriteByte('$')
+			i += 2
+		} else if s[i] == '$' && i+1 < len(s) {
 			// 处理变量展开
 			var varName strings.Builder
 			
