@@ -75,7 +75,11 @@ gobash.exe -c "echo hello world"
 - `export [变量=值]` - 导出环境变量
 - `unset [变量]` - 取消设置环境变量
 - `env` - 显示所有环境变量
-- `set` - 显示所有变量
+- `set` - 显示所有变量和shell选项
+- `set -x` / `set +x` - 显示/隐藏执行的命令（xtrace）
+- `set -e` / `set +e` - 遇到错误立即退出/继续执行（errexit）
+- `set -u` / `set +u` - 使用未定义变量时报错/允许未定义变量（nounset）
+- `set -xe` - 可以组合多个选项
 
 ### 控制
 - `exit [退出码]` - 退出shell
