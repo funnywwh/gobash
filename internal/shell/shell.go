@@ -10,6 +10,7 @@ import (
 	"gobash/internal/executor"
 	"gobash/internal/lexer"
 	"gobash/internal/parser"
+	"github.com/chzyer/readline"
 )
 
 // Shell Shell主结构
