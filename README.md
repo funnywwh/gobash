@@ -165,6 +165,26 @@ $ echo "${MYVAR}world"
 helloworld
 ```
 
+### 命令替换
+
+```bash
+# 使用 $(command) 格式
+$ echo "Result: $(echo hello)"
+Result: hello
+
+# 使用反引号格式（在PowerShell中需要转义）
+$ echo `echo world`
+world
+
+# 在字符串中使用命令替换
+$ echo "Current dir: $(pwd)"
+Current dir: C:\Users\27027\wbash
+
+# 嵌套使用
+$ echo "Files: $(ls | head -1)"
+Files: gobash.exe
+```
+
 ### 控制流
 
 ```bash
