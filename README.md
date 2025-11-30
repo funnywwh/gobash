@@ -10,12 +10,16 @@
 - ✅ 完整的命令历史（history命令，持久化存储，箭头键浏览）
 - ✅ 命令别名（alias/unalias）
 - ✅ 丰富的内置命令集（cd, pwd, echo, ls, cat, mkdir, rm等）
+- ✅ 文本处理命令（head, tail, wc, grep, sort, uniq, cut）
 - ✅ 管道和重定向（|, >, <, >>），支持内置命令重定向
 - ✅ 环境变量支持（单引号不展开，双引号展开变量）
 - ✅ 命令替换（`$(command)` 和 `` `command` ``）
 - ✅ 算术展开（`$((expr))`）
 - ✅ 控制流语句（if/else, for, while）
 - ✅ 函数定义和调用（支持参数传递）
+- ✅ 作业控制（后台任务、jobs、fg、bg命令）
+- ✅ Shell选项（set命令：-x, -e, -u等）
+- ✅ Tab键自动补全（命令、文件名、变量名）
 - ✅ 增强的错误处理和提示
 - ✅ Windows平台优化
 
@@ -100,6 +104,11 @@ gobash.exe -c "echo hello world"
 - `type [命令...]` - 显示命令类型（内置/外部）
 - `true` - 总是成功返回
 - `false` - 总是失败返回
+
+### 作业控制
+- `jobs` - 显示所有后台作业列表
+- `fg [作业ID]` - 将后台任务转到前台（支持 %1 或 1 格式）
+- `bg [作业ID]` - 继续后台任务（支持 %1 或 1 格式）
 
 ## 示例
 
@@ -404,6 +413,7 @@ gobash/
 - [x] 内置命令（cd, pwd, echo, exit, export, unset, env, set）
 - [x] 文件操作（ls, cat, mkdir, rmdir, rm, touch, clear）
 - [x] 文本处理（head, tail, wc, grep, sort, uniq, cut）
+- [x] 作业控制（jobs, fg, bg，后台任务支持）
 - [x] 别名管理（alias, unalias）
 - [x] 命令历史（history命令，持久化存储）
 
@@ -427,6 +437,7 @@ gobash/
 - [x] 命令历史持久化（~/.gobash_history）
 - [x] 箭头键浏览历史（↑↓键浏览，支持readline库）
 - [x] Tab键自动补全（命令、文件名、变量名）
+- [x] Shell选项支持（set -x, set -e, set -u等）
 
 ### 🔄 计划中的功能（可选增强）
 

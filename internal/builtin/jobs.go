@@ -23,6 +23,7 @@ type Job interface {
 	GetStatus() JobStatus
 	GetProcess() *os.Process
 	SetStatus(status JobStatus)
+	Wait() error // 等待作业完成
 }
 
 // JobStatus 作业状态
@@ -117,14 +118,11 @@ func fg(args []string, env map[string]string) error {
 	// 设置当前作业
 	globalJobManager.SetCurrentJob(job.GetID())
 
-	// 等待进程完成
-	if job.GetProcess() != nil {
-		_, err := job.GetProcess().Wait()
-		if err != nil {
-			return err
-		}
-		job.SetStatus(JobDone)
+	// 等待作业完成（使用Job的Wait方法，避免重复Wait进程）
+	if err := job.Wait(); err != nil {
+		return err
 	}
+	job.SetStatus(JobDone)
 
 	return nil
 }

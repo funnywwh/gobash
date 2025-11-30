@@ -16,6 +16,8 @@ type Job struct {
 	Status    JobStatus     // 状态
 	StartTime time.Time     // 开始时间
 	Process   *os.Process   // 进程对象
+	cmd       *exec.Cmd     // 保存cmd引用以便Wait
+	done      chan struct{}  // 进程完成通知channel
 	mu        sync.Mutex    // 互斥锁
 }
 
@@ -51,6 +53,15 @@ func (j *Job) SetStatus(status builtin.JobStatus) {
 // GetProcess 获取进程对象
 func (j *Job) GetProcess() *os.Process {
 	return j.Process
+}
+
+// Wait 等待作业完成
+func (j *Job) Wait() error {
+	if j.done == nil {
+		return nil // 如果done channel不存在，说明作业已经完成或不存在
+	}
+	<-j.done
+	return nil
 }
 
 // 使用builtin包中定义的JobStatus类型
@@ -90,6 +101,8 @@ func (jm *JobManager) AddJob(cmd *exec.Cmd, cmdStr string) int {
 		Status:    JobRunning,
 		StartTime: time.Now(),
 		Process:   cmd.Process,
+		cmd:       cmd,
+		done:      make(chan struct{}),
 	}
 
 	jm.jobs[jm.nextID] = job
@@ -97,14 +110,15 @@ func (jm *JobManager) AddJob(cmd *exec.Cmd, cmdStr string) int {
 	jm.nextID++
 
 	// 在goroutine中等待进程完成
-	go func() {
+	go func(jobID int, doneChan chan struct{}) {
 		cmd.Wait()
+		close(doneChan)
 		jm.mu.Lock()
-		if job, ok := jm.jobs[id]; ok {
+		if job, ok := jm.jobs[jobID]; ok {
 			job.Status = JobDone
 		}
 		jm.mu.Unlock()
-	}()
+	}(id, job.done)
 
 	return id
 }
