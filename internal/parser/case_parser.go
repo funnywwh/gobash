@@ -39,6 +39,13 @@ func (p *Parser) parseCaseStatement() *CaseStatement {
 			   p.curToken.Type == lexer.STRING_SINGLE ||
 			   p.curToken.Type == lexer.STRING_DOUBLE {
 				pattern := p.curToken.Literal
+				// 移除引号（如果有）
+				if (p.curToken.Type == lexer.STRING_SINGLE || p.curToken.Type == lexer.STRING_DOUBLE) && len(pattern) >= 2 {
+					if (pattern[0] == '\'' && pattern[len(pattern)-1] == '\'') ||
+					   (pattern[0] == '"' && pattern[len(pattern)-1] == '"') {
+						pattern = pattern[1 : len(pattern)-1]
+					}
+				}
 				patterns = append(patterns, pattern)
 				patternStart = false
 			} else if p.curToken.Type == lexer.PIPE {

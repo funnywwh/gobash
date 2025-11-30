@@ -261,6 +261,14 @@ func (l *Lexer) NextToken() Token {
 			tok.Line = l.line
 			tok.Column = l.column
 			return tok
+		} else if l.ch == '-' {
+			// 处理以 - 开头的标识符（如 --win, -a）
+			// 使用 readIdentifierOrPath 来读取，因为它可以处理包含 - 的字符串
+			tok.Literal = l.readIdentifierOrPath()
+			tok.Type = IDENTIFIER
+			tok.Line = l.line
+			tok.Column = l.column
+			return tok
 		} else {
 			// 其他字符作为标识符的一部分（如路径中的/或.）
 			if l.ch != 0 {

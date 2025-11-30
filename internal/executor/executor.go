@@ -43,6 +43,9 @@ func New() *Executor {
 		key, value := splitEnv(env)
 		e.env[key] = value
 	}
+	// 初始化位置参数：如果没有参数，$# 为 0
+	e.env["#"] = "0"
+	e.env["@"] = ""
 	return e
 }
 
@@ -112,6 +115,28 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 		return fmt.Errorf("命令名为空")
 	}
 
+	// 检查是否是简单的变量赋值 VAR=value
+	if strings.Contains(cmdName, "=") && !strings.Contains(cmdName, "[") {
+		// 这是简单的变量赋值
+		parts := strings.SplitN(cmdName, "=", 2)
+		if len(parts) == 2 {
+			varName := strings.TrimSpace(parts[0])
+			varValue := strings.TrimSpace(parts[1])
+			// 移除引号（如果有）
+			if len(varValue) >= 2 {
+				if (varValue[0] == '"' && varValue[len(varValue)-1] == '"') ||
+				   (varValue[0] == '\'' && varValue[len(varValue)-1] == '\'') {
+					varValue = varValue[1 : len(varValue)-1]
+				}
+			}
+			// 展开变量值中的变量
+			varValue = e.expandVariablesInString(varValue)
+			// 设置环境变量
+			e.SetEnv(varName, varValue)
+			return nil
+		}
+	}
+
 	// 检查是否是关联数组赋值 arr[key]=value
 	if strings.Contains(cmdName, "[") && strings.Contains(cmdName, "]") && strings.Contains(cmdName, "=") {
 		return e.executeAssocArrayAssignment(cmdName, cmd.Args)
@@ -149,9 +174,18 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 				return err
 			}
 			if !result {
+				// 条件为假，返回退出码错误（ExitCode=1），这样while循环可以正确处理
 				if e.options["e"] {
 					os.Exit(1)
 				}
+				// 返回一个ExitError，退出码为1
+				// 创建一个命令来获取ExitError
+				cmd := exec.Command("cmd", "/c", "exit", "1")
+				_ = cmd.Run()
+				if cmd.ProcessState != nil {
+					return &exec.ExitError{ProcessState: cmd.ProcessState}
+				}
+				// 如果无法创建ExitError，返回一个普通错误
 				return fmt.Errorf("test failed")
 			}
 			return nil
@@ -577,15 +611,40 @@ func (e *Executor) executeFor(stmt *parser.ForStatement) error {
 
 // executeWhile 执行while循环
 func (e *Executor) executeWhile(stmt *parser.WhileStatement) error {
+	// 保存原始的 set -e 状态
+	originalSetE := e.options["e"]
+	// 在 while 循环条件中，临时禁用 set -e（bash 的行为）
+	e.options["e"] = false
+	
 	for {
-		if err := e.executeCommand(stmt.Condition); err != nil {
-			// 条件失败，退出循环
-			break
+		// 执行条件命令，检查退出码
+		// 如果命令返回错误（非零退出码），条件为假，退出循环
+		// 如果命令成功（零退出码），条件为真，继续执行循环体
+		err := e.executeCommand(stmt.Condition)
+		if err != nil {
+			// 检查是否是退出码错误（ExitError）
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				// 这是正常的退出码，非零表示条件为假
+				if exitErr.ExitCode() != 0 {
+					break
+				}
+			} else {
+				// 其他错误（如命令未找到），也视为条件为假
+				break
+			}
 		}
+		// 条件为真，执行循环体（恢复原始的 set -e 状态）
+		e.options["e"] = originalSetE
 		if err := e.executeBlock(stmt.Body); err != nil {
+			// 在循环体中，如果 set -e 启用且出错，应该退出
+			e.options["e"] = originalSetE
 			return err
 		}
+		// 再次禁用 set -e 用于下一次条件检查
+		e.options["e"] = false
 	}
+	// 恢复原始的 set -e 状态
+	e.options["e"] = originalSetE
 	return nil
 }
 
@@ -627,8 +686,15 @@ func (e *Executor) executeCaseStatement(stmt *parser.CaseStatement) error {
 		// 检查是否匹配
 		matched := false
 		for _, pattern := range caseClause.Patterns {
-			// 简单的字符串匹配（支持通配符 * 和 ?）
-			if matchPattern(value, pattern) {
+			// 对于完全匹配，直接比较字符串（移除空格）
+			valueTrimmed := strings.TrimSpace(value)
+			patternTrimmed := strings.TrimSpace(pattern)
+			if valueTrimmed == patternTrimmed {
+				matched = true
+				break
+			}
+			// 如果直接匹配失败，尝试通配符匹配
+			if matchPattern(valueTrimmed, patternTrimmed) {
 				matched = true
 				break
 			}
@@ -894,6 +960,78 @@ func (e *Executor) expandVariablesInString(s string) string {
 		} else if s[i] == '$' && i+1 < len(s) {
 			// 处理变量展开
 			var varName strings.Builder
+			
+			// 处理特殊变量 $#, $@, $*, $?, $!, $$, $0, $1, $2, ...
+			if i+1 < len(s) && s[i+1] == '#' {
+				// $# 参数个数
+				i += 2
+				if value, ok := e.env["#"]; ok {
+					result.WriteString(value)
+				} else {
+					result.WriteString("0")
+				}
+				continue
+			} else if i+1 < len(s) && s[i+1] == '@' {
+				// $@ 所有参数
+				i += 2
+				if value, ok := e.env["@"]; ok {
+					result.WriteString(value)
+				}
+				continue
+			} else if i+1 < len(s) && s[i+1] == '*' {
+				// $* 所有参数（与$@类似）
+				i += 2
+				if value, ok := e.env["@"]; ok {
+					result.WriteString(value)
+				}
+				continue
+			} else if i+1 < len(s) && s[i+1] == '?' {
+				// $? 上一个命令的退出码
+				i += 2
+				if value, ok := e.env["?"]; ok {
+					result.WriteString(value)
+				} else {
+					result.WriteString("0")
+				}
+				continue
+			} else if i+1 < len(s) && s[i+1] == '!' {
+				// $! 最后一个后台进程的PID
+				i += 2
+				if value, ok := e.env["!"]; ok {
+					result.WriteString(value)
+				} else {
+					result.WriteString("0")
+				}
+				continue
+			} else if i+1 < len(s) && s[i+1] == '$' {
+				// $$ 当前进程的PID
+				i += 2
+				result.WriteString(fmt.Sprintf("%d", os.Getpid()))
+				continue
+			} else if i+1 < len(s) && s[i+1] == '0' {
+				// $0 脚本名
+				i += 2
+				if value, ok := e.env["0"]; ok {
+					result.WriteString(value)
+				} else {
+					result.WriteString(os.Args[0])
+				}
+				continue
+			} else if i+1 < len(s) && isDigit(s[i+1]) {
+				// $1, $2, ... 位置参数
+				i++
+				for i < len(s) && isDigit(s[i]) {
+					varName.WriteByte(s[i])
+					i++
+				}
+				varNameStr := varName.String()
+				if value, ok := e.env[varNameStr]; ok {
+					result.WriteString(value)
+				} else if e.options["u"] {
+					result.WriteString("__UNDEFINED_VAR__" + varNameStr)
+				}
+				continue
+			}
 			
 			if i+1 < len(s) && s[i+1] == '{' {
 				// ${VAR} 或 ${arr[0]} 格式

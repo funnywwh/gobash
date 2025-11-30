@@ -26,7 +26,9 @@ func main() {
 
 	// 执行脚本文件
 	if *scriptFile != "" {
-		if err := sh.ExecuteScript(*scriptFile); err != nil {
+		// 获取 -f 之后的参数作为脚本参数
+		scriptArgs := flag.Args()
+		if err := sh.ExecuteScript(*scriptFile, scriptArgs...); err != nil {
 			fmt.Fprintf(os.Stderr, "错误: %v\n", err)
 			os.Exit(1)
 		}
@@ -35,7 +37,10 @@ func main() {
 
 	// 如果有命令行参数，作为脚本执行
 	if len(os.Args) > 1 && os.Args[1][0] != '-' {
-		if err := sh.ExecuteScript(os.Args[1]); err != nil {
+		scriptPath := os.Args[1]
+		// 获取脚本路径之后的参数作为脚本参数
+		scriptArgs := os.Args[2:]
+		if err := sh.ExecuteScript(scriptPath, scriptArgs...); err != nil {
 			fmt.Fprintf(os.Stderr, "错误: %v\n", err)
 			os.Exit(1)
 		}

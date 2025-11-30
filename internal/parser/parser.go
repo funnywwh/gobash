@@ -194,6 +194,38 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 		return nil
 	}
 
+	// 检查是否是变量赋值 VAR=value
+	// 如果当前是标识符，下一个是 ILLEGAL（=），再下一个是值
+	if p.curToken.Type == lexer.IDENTIFIER && p.peekToken.Type == lexer.ILLEGAL {
+		// 检查 ILLEGAL token 是否是 =
+		if p.peekToken.Literal == "=" {
+			// 这是变量赋值，将 VAR=value 作为命令名
+			varName := p.curToken.Literal
+			p.nextToken() // 跳过 VAR
+			p.nextToken() // 跳过 =
+			// 读取值（可能是字符串、标识符等）
+			var value strings.Builder
+			for p.curToken.Type != lexer.EOF && 
+			    p.curToken.Type != lexer.NEWLINE && 
+			    p.curToken.Type != lexer.SEMICOLON &&
+			    p.curToken.Type != lexer.WHITESPACE {
+				if p.curToken.Type == lexer.STRING || 
+				   p.curToken.Type == lexer.STRING_SINGLE || 
+				   p.curToken.Type == lexer.STRING_DOUBLE {
+					value.WriteString(p.curToken.Literal)
+				} else if p.curToken.Type == lexer.IDENTIFIER {
+					value.WriteString(p.curToken.Literal)
+				} else {
+					break
+				}
+				p.nextToken()
+			}
+			// 将 VAR=value 作为命令名
+			stmt.Command = &Identifier{Value: varName + "=" + value.String()}
+			return stmt
+		}
+	}
+
 	// 解析命令（包括 [ 和 [[ 命令）
 	if p.curToken.Type == lexer.LBRACKET {
 		// [ 命令，创建一个标识符表达式

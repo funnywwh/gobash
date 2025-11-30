@@ -69,6 +69,7 @@ func init() {
 	builtins["fg"] = fg
 	builtins["bg"] = bg
 	builtins["declare"] = declare
+	builtins["shift"] = shift
 }
 
 // GetBuiltins 获取所有内置命令

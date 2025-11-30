@@ -208,7 +208,14 @@ func (s *Shell) saveHistory() {
 }
 
 // ExecuteScript 执行脚本文件
-func (s *Shell) ExecuteScript(scriptPath string) error {
+func (s *Shell) ExecuteScript(scriptPath string, args ...string) error {
+	// 设置位置参数（$1, $2, ...）和 $#、$@
+	for i, arg := range args {
+		s.executor.SetEnv(fmt.Sprintf("%d", i+1), arg)
+	}
+	s.executor.SetEnv("#", fmt.Sprintf("%d", len(args)))
+	s.executor.SetEnv("@", strings.Join(args, " "))
+	
 	file, err := os.Open(scriptPath)
 	if err != nil {
 		return fmt.Errorf("无法打开脚本文件: %v", err)
@@ -305,16 +312,45 @@ func (s *Shell) isStatementComplete(statement string) bool {
 		return true
 	}
 	
-	// 简单的检查：统计关键字
-	caseCount := strings.Count(statement, "case ")
+	// 使用更精确的匹配来统计关键字（必须是独立的单词）
+	words := strings.Fields(statement)
+	
+	caseCount := 0
+	for _, word := range words {
+		if word == "case" {
+			caseCount++
+		}
+	}
 	esacCount := strings.Count(statement, "esac")
 	
-	ifCount := strings.Count(statement, "if ")
-	fiCount := strings.Count(statement, " fi")
+	ifCount := 0
+	for _, word := range words {
+		if word == "if" {
+			ifCount++
+		}
+	}
+	fiCount := strings.Count(statement, "fi")
 	
-	forCount := strings.Count(statement, "for ")
-	whileCount := strings.Count(statement, "while ")
-	doneCount := strings.Count(statement, " done")
+	forCount := 0
+	for _, word := range words {
+		if word == "for" {
+			forCount++
+		}
+	}
+	
+	whileCount := 0
+	for _, word := range words {
+		if word == "while" {
+			whileCount++
+		}
+	}
+	
+	doneCount := 0
+	for _, word := range words {
+		if word == "done" {
+			doneCount++
+		}
+	}
 	
 	// 检查case语句
 	if caseCount > esacCount {
