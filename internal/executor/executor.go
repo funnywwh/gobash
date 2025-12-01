@@ -7,8 +7,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"gobash/internal/builtin"
 	"gobash/internal/lexer"
 	"gobash/internal/parser"
@@ -453,16 +455,58 @@ func (e *Executor) executeExternalCommand(cmd *parser.CommandStatement) error {
 		return nil
 	}
 
-	if err := execCmd.Run(); err != nil {
-		// 检查是否是命令未找到
-		if _, ok := err.(*exec.ExitError); !ok {
-			return fmt.Errorf("命令 '%s' 未找到或无法执行: %v", cmdName, err)
-		}
-		// 命令执行失败，返回退出码
-		return err
+	// 对于前台命令，使用 Start() + Wait() 而不是 Run()，以便处理信号
+	if err := execCmd.Start(); err != nil {
+		return fmt.Errorf("无法启动命令 '%s': %v", cmdName, err)
 	}
 
-	return nil
+	// 设置信号处理，当收到 SIGINT (Ctrl+C) 时，向子进程发送信号
+	// os.Interrupt 在所有平台都可用（Windows/Linux/macOS）
+	// syscall.SIGTERM 在 Unix 系统上可用，Windows 上会被 signal.Notify 自动忽略
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	
+	// 使用 goroutine 等待命令完成
+	done := make(chan error, 1)
+	go func() {
+		done <- execCmd.Wait()
+	}()
+
+	// 等待命令完成或收到信号
+	select {
+	case err := <-done:
+		// 命令完成，停止信号监听
+		signal.Stop(sigChan)
+		if err != nil {
+			// 检查是否是命令未找到
+			if _, ok := err.(*exec.ExitError); !ok {
+				return fmt.Errorf("命令 '%s' 未找到或无法执行: %v", cmdName, err)
+			}
+			// 命令执行失败，返回退出码
+			return err
+		}
+		return nil
+	case sig := <-sigChan:
+		// 收到中断信号，向子进程发送相同的信号
+		if execCmd.Process != nil {
+			// 尝试优雅地终止进程
+			// 注意：在 Windows 上，某些信号可能不被支持，Signal() 可能返回错误
+			// 我们忽略这个错误，因为如果 Signal() 失败，我们会用 Kill() 作为后备
+			_ = execCmd.Process.Signal(sig)
+			// 等待一小段时间让进程有机会退出
+			select {
+			case <-done:
+				// 进程已经退出
+			default:
+				// 如果进程没有退出，强制终止
+				execCmd.Process.Kill()
+				<-done
+			}
+		}
+		signal.Stop(sigChan)
+		// 返回中断错误
+		return fmt.Errorf("命令被中断")
+	}
 }
 
 // executePipe 执行管道
@@ -510,17 +554,76 @@ func (e *Executor) executePipe(left, right *parser.CommandStatement) error {
 	}
 
 	// 启动左侧命令
-	if err := leftCmd.Run(); err != nil {
+	if err := leftCmd.Start(); err != nil {
 		rightCmd.Process.Kill()
-		return fmt.Errorf("执行左侧命令 '%s' 失败: %v", leftCmdName, err)
+		return fmt.Errorf("启动左侧命令 '%s' 失败: %v", leftCmdName, err)
 	}
 
-	// 等待右侧命令完成
-	if err := rightCmd.Wait(); err != nil {
-		return fmt.Errorf("等待右侧命令 '%s' 完成失败: %v", rightCmdName, err)
-	}
+	// 设置信号处理，当收到 SIGINT (Ctrl+C) 时，向子进程发送信号
+	// os.Interrupt 在所有平台都可用（Windows/Linux/macOS）
+	// syscall.SIGTERM 在 Unix 系统上可用，Windows 上会被 signal.Notify 自动忽略
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-	return nil
+	// 使用 goroutine 等待两个命令完成
+	done := make(chan error, 2)
+	go func() {
+		done <- leftCmd.Wait()
+	}()
+	go func() {
+		done <- rightCmd.Wait()
+	}()
+
+	// 等待命令完成或收到信号
+	select {
+	case err := <-done:
+		// 第一个命令完成，检查是否有错误
+		if err != nil {
+			// 如果左侧命令失败，终止右侧命令
+			if rightCmd.Process != nil {
+				rightCmd.Process.Kill()
+			}
+			signal.Stop(sigChan)
+			return fmt.Errorf("执行左侧命令 '%s' 失败: %v", leftCmdName, err)
+		}
+		// 关闭管道，让右侧命令知道输入结束
+		pipe.Close()
+		// 等待右侧命令完成
+		err = <-done
+		signal.Stop(sigChan)
+		if err != nil {
+			return fmt.Errorf("等待右侧命令 '%s' 完成失败: %v", rightCmdName, err)
+		}
+		return nil
+	case sig := <-sigChan:
+		// 收到中断信号，向两个进程发送相同的信号
+		// 注意：在 Windows 上，某些信号可能不被支持，Signal() 可能返回错误
+		// 我们忽略这个错误，因为如果 Signal() 失败，我们会用 Kill() 作为后备
+		if leftCmd.Process != nil {
+			_ = leftCmd.Process.Signal(sig)
+		}
+		if rightCmd.Process != nil {
+			_ = rightCmd.Process.Signal(sig)
+		}
+		// 等待一小段时间让进程有机会退出
+		select {
+		case <-done:
+			<-done
+		default:
+			// 如果进程没有退出，强制终止
+			if leftCmd.Process != nil {
+				leftCmd.Process.Kill()
+			}
+			if rightCmd.Process != nil {
+				rightCmd.Process.Kill()
+			}
+			<-done
+			<-done
+		}
+		signal.Stop(sigChan)
+		// 返回中断错误
+		return fmt.Errorf("命令被中断")
+	}
 }
 
 // setupRedirects 设置重定向
@@ -1206,6 +1309,40 @@ func (e *Executor) expandVariablesInString(s string) string {
 				}
 			}
 		} else if s[i] == '$' && i+1 < len(s) {
+			// 检查是否是算术展开 $((...))
+			if i+2 < len(s) && s[i+1] == '(' && s[i+2] == '(' {
+				// 找到匹配的 ))
+				i += 3 // 跳过 $(( 
+				startPos := i
+				depth := 1
+				for i < len(s) && depth > 0 {
+					if i+1 < len(s) && s[i] == ')' && s[i+1] == ')' {
+						depth--
+						if depth == 0 {
+							// 提取算术表达式
+							expr := s[startPos:i]
+							// 计算算术表达式
+							result.WriteString(e.evaluateArithmetic(expr))
+							i += 2 // 跳过 ))
+							continue
+						} else {
+							i += 2
+						}
+					} else if i+1 < len(s) && s[i] == '(' && s[i+1] == '(' {
+						depth++
+						i += 2
+					} else {
+						i++
+					}
+				}
+				if depth > 0 {
+					// 括号不匹配，保留原样
+					result.WriteString("$((")
+					i = startPos
+				}
+				continue
+			}
+			
 			// 检查 result 中最后一个字符是否是转义的 \
 			if result.Len() > 0 {
 				resultStr := result.String()

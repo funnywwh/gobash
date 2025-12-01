@@ -225,35 +225,28 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 					value.WriteString(p.curToken.Literal)
 				} else if p.curToken.Type == lexer.DOLLAR {
 					// 处理 $VAR 或 $((expr)) 的开始
-					value.WriteString("$")
+					// 先检查是否是算术展开 $((expr))
 					if p.peekToken.Type == lexer.LPAREN {
-						// 可能是 $((expr)) 或 $(command)
 						peek2 := p.peekToken
 						p.nextToken() // 移动到 (
 						if p.peekToken.Type == lexer.LPAREN {
-							// $((expr)) 算术展开
-							value.WriteString("((")
-							p.nextToken() // 移动到第二个 (
-							// 读取算术表达式直到 ))
-							for p.curToken.Type != lexer.EOF && 
-							    p.curToken.Type != lexer.NEWLINE {
-								if p.curToken.Type == lexer.RPAREN && 
-								   p.peekToken.Type == lexer.RPAREN {
-									value.WriteString("))")
-									p.nextToken() // 跳过第一个 )
-									p.nextToken() // 跳过第二个 )
-									break
-								}
+							// $((expr)) 算术展开，读取完整的算术展开 token
+							p.curToken = peek2 // 恢复，让 lexer 读取完整的算术展开
+							p.nextToken() // 这会读取 $((expr)) 作为 ARITHMETIC_EXPANSION token
+							if p.curToken.Type == lexer.ARITHMETIC_EXPANSION {
+								value.WriteString("$(((")
 								value.WriteString(p.curToken.Literal)
-								p.nextToken()
+								value.WriteString("))")
+								p.nextToken() // 移动到下一个 token
+								continue
 							}
-							continue
 						} else {
 							// $(command) 命令替换，恢复
 							p.curToken = peek2
-							break
 						}
 					}
+					// 普通变量展开 $VAR
+					value.WriteString("$")
 				} else {
 					break
 				}
