@@ -24,6 +24,15 @@ import (
 	"time"
 )
 
+// ExitError 表示 exit 命令，包含退出码
+type ExitError struct {
+	Code int
+}
+
+func (e *ExitError) Error() string {
+	return fmt.Sprintf("exit %d", e.Code)
+}
+
 // BuiltinFunc 内置命令函数类型
 // 所有内置命令必须符合此函数签名
 // args: 命令参数列表
@@ -162,6 +171,7 @@ func echo(args []string, env map[string]string) error {
 }
 
 // exit 退出shell
+// 返回 ExitError 而不是直接调用 os.Exit，以便调用者可以决定如何处理
 func exit(args []string, env map[string]string) error {
 	code := 0
 	if len(args) > 0 {
@@ -173,8 +183,7 @@ func exit(args []string, env map[string]string) error {
 			code = 0
 		}
 	}
-	os.Exit(code)
-	return nil
+	return &ExitError{Code: code}
 }
 
 // export 导出环境变量

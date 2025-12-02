@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"gobash/internal/builtin"
+	"gobash/internal/executor"
 	"gobash/internal/shell"
 )
 
@@ -21,6 +23,10 @@ func main() {
 	// 执行命令字符串
 	if *scriptPath != "" {
 		if err := sh.ExecuteReader(strings.NewReader(*scriptPath)); err != nil {
+			// 检查是否是 exit 命令
+			if exitErr, ok := err.(*builtin.ExitError); ok {
+				os.Exit(exitErr.Code)
+			}
 			fmt.Fprintf(os.Stderr, "错误: %v\n", err)
 			os.Exit(1)
 		}
@@ -32,6 +38,10 @@ func main() {
 		// 获取 -f 之后的参数作为脚本参数
 		scriptArgs := flag.Args()
 		if err := sh.ExecuteScript(*scriptFile, scriptArgs...); err != nil {
+			// 检查是否是 exit 命令
+			if exitErr, ok := err.(*builtin.ExitError); ok {
+				os.Exit(exitErr.Code)
+			}
 			fmt.Fprintf(os.Stderr, "错误: %v\n", err)
 			os.Exit(1)
 		}
@@ -131,8 +141,23 @@ func main() {
 			select {
 			case err := <-scriptErr:
 				if err != nil {
-					fmt.Fprintf(os.Stderr, "错误: 执行脚本 %s 失败: %v\n", scriptPath, err)
-					hasError = true
+					// 检查是否是 exit 命令或脚本退出错误
+					if exitErr, ok := err.(*builtin.ExitError); ok {
+						// exit 命令是正常的脚本退出，记录退出码但继续执行下一个脚本
+						if exitErr.Code != 0 {
+							hasError = true
+						}
+						// 不输出错误信息，因为 exit 是正常的脚本退出
+					} else if scriptExitErr, ok := err.(*executor.ScriptExitError); ok {
+						// 脚本退出错误（由于 set -e），记录退出码但继续执行下一个脚本
+						if scriptExitErr.Code != 0 {
+							hasError = true
+						}
+						// 不输出错误信息，因为这是正常的脚本退出
+					} else {
+						fmt.Fprintf(os.Stderr, "错误: 执行脚本 %s 失败: %v\n", scriptPath, err)
+						hasError = true
+					}
 				}
 			case <-time.After(5 * time.Second):
 				fmt.Fprintf(os.Stderr, "警告: 脚本 %s 执行超时（5秒），跳过\n", scriptPath)

@@ -12,14 +12,16 @@ package shell
 import (
 	"bufio"
 	"fmt"
+	"gobash/internal/builtin"
+	"gobash/internal/executor"
+	"gobash/internal/lexer"
+	"gobash/internal/parser"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"gobash/internal/executor"
-	"gobash/internal/lexer"
-	"gobash/internal/parser"
+
 	"github.com/chzyer/readline"
 )
 
@@ -38,7 +40,7 @@ type Shell struct {
 // 初始化Shell结构，加载历史记录，创建执行器实例
 func New() *Shell {
 	history := NewHistory(1000)
-	
+
 	// 尝试加载历史记录
 	home := os.Getenv("HOME")
 	if home == "" {
@@ -57,10 +59,10 @@ func New() *Shell {
 		history:  history,
 		options:  make(map[string]bool),
 	}
-	
+
 	// 将选项状态传递给执行器
 	sh.executor.SetOptions(sh.options)
-	
+
 	return sh
 }
 
@@ -73,15 +75,15 @@ func (s *Shell) Run() {
 	if home == "" {
 		home = os.Getenv("USERPROFILE")
 	}
-	
+
 	historyFile := ""
 	if home != "" {
 		historyFile = filepath.Join(home, ".gobash_history")
 	}
-	
+
 	// 创建自动补全器
 	completer := NewCompleter(s)
-	
+
 	// 创建readline配置
 	config := &readline.Config{
 		Prompt:          s.prompt,
@@ -91,7 +93,7 @@ func (s *Shell) Run() {
 		InterruptPrompt: "^C",
 		EOFPrompt:       "exit",
 	}
-	
+
 	rl, err := readline.NewEx(config)
 	if err != nil {
 		// 如果readline初始化失败，回退到简单的bufio.Scanner
@@ -105,7 +107,7 @@ func (s *Shell) Run() {
 	for s.running {
 		// 更新提示符
 		rl.SetPrompt(s.prompt)
-		
+
 		line, err := rl.Readline()
 		if err != nil {
 			if err == readline.ErrInterrupt {
@@ -138,6 +140,11 @@ func (s *Shell) Run() {
 		}
 
 		if err := s.executeLine(line); err != nil {
+			// 检查是否是 exit 命令
+			if exitErr, ok := err.(*builtin.ExitError); ok {
+				// 在交互式模式下，exit 命令退出整个程序
+				os.Exit(exitErr.Code)
+			}
 			fmt.Fprintf(os.Stderr, "gobash: %v\n", err)
 		} else {
 			// 成功执行的命令添加到历史记录
@@ -145,11 +152,11 @@ func (s *Shell) Run() {
 			// 保存到readline历史记录
 			rl.SaveHistory(line)
 		}
-		
+
 		// 更新提示符（工作目录可能已改变）
 		s.prompt = getPrompt()
 	}
-	
+
 	// 保存历史记录
 	s.saveHistory()
 }
@@ -182,16 +189,21 @@ func (s *Shell) runSimple() {
 		}
 
 		if err := s.executeLine(line); err != nil {
+			// 检查是否是 exit 命令
+			if exitErr, ok := err.(*builtin.ExitError); ok {
+				// 在交互式模式下，exit 命令退出整个程序
+				os.Exit(exitErr.Code)
+			}
 			fmt.Fprintf(os.Stderr, "gobash: %v\n", err)
 		} else {
 			// 成功执行的命令添加到历史记录
 			s.history.Add(line)
 		}
-		
+
 		// 更新提示符（工作目录可能已改变）
 		s.prompt = getPrompt()
 	}
-	
+
 	// 保存历史记录
 	s.saveHistory()
 }
@@ -216,7 +228,7 @@ func (s *Shell) ExecuteScript(scriptPath string, args ...string) error {
 	}
 	s.executor.SetEnv("#", fmt.Sprintf("%d", len(args)))
 	s.executor.SetEnv("@", strings.Join(args, " "))
-	
+
 	file, err := os.Open(scriptPath)
 	if err != nil {
 		return fmt.Errorf("无法打开脚本文件: %v", err)
@@ -235,11 +247,11 @@ func (s *Shell) ExecuteReader(reader io.Reader) error {
 	lineNum := 0
 	var currentStatement strings.Builder
 
-		for scanner.Scan() {
+	for scanner.Scan() {
 		lineNum++
 		originalLine := scanner.Text()
 		line := strings.TrimSpace(originalLine)
-		
+
 		// 跳过空行（但如果当前有未完成的语句，保留空行）
 		if line == "" {
 			if currentStatement.Len() > 0 {
@@ -247,19 +259,19 @@ func (s *Shell) ExecuteReader(reader io.Reader) error {
 			}
 			continue
 		}
-		
+
 		// 跳过shebang行（#!/bin/bash, #!/usr/bin/env bash等）
 		if firstLine && strings.HasPrefix(line, "#!") {
 			firstLine = false
 			continue
 		}
 		firstLine = false
-		
+
 		// 跳过注释行（以#开头，但不是shebang）
 		if strings.HasPrefix(line, "#") {
 			continue
 		}
-		
+
 		// 如果有未完成的语句，追加当前行
 		if currentStatement.Len() > 0 {
 			currentStatement.WriteString("\n")
@@ -267,18 +279,35 @@ func (s *Shell) ExecuteReader(reader io.Reader) error {
 		} else {
 			currentStatement.WriteString(originalLine)
 		}
-		
+
 		// 检查语句是否完成
 		statement := currentStatement.String()
 		isComplete := s.isStatementComplete(statement)
 		if isComplete {
 			// 执行完整的语句
 			if err := s.executeLine(statement); err != nil {
+				// 检查是否是 exit 命令或脚本退出错误
+				if exitErr, ok := err.(*builtin.ExitError); ok {
+					// 返回 ExitError，让调用者决定如何处理
+					return exitErr
+				}
+				if scriptExitErr, ok := err.(*executor.ScriptExitError); ok {
+					// 返回 ScriptExitError，让调用者决定如何处理
+					return scriptExitErr
+				}
 				// 输出错误信息到stderr，包含行号
 				fmt.Fprintf(os.Stderr, "gobash: 第%d行: %v\n", lineNum, err)
 				fmt.Fprintf(os.Stderr, "  %s\n", statement)
 				// 如果设置了set -e，遇到错误应该退出
+				// 但是 ScriptExitError 和 ExitError 已经表示脚本退出，不需要再次包装
 				if s.options["e"] {
+					// 检查是否已经是退出错误
+					if _, ok := err.(*builtin.ExitError); ok {
+						return err
+					}
+					if _, ok := err.(*executor.ScriptExitError); ok {
+						return err
+					}
 					return fmt.Errorf("脚本执行失败（第%d行）: %v", lineNum, err)
 				}
 			}
@@ -291,9 +320,25 @@ func (s *Shell) ExecuteReader(reader io.Reader) error {
 	if currentStatement.Len() > 0 {
 		statement := currentStatement.String()
 		if err := s.executeLine(statement); err != nil {
+			// 检查是否是 exit 命令或脚本退出错误
+			if exitErr, ok := err.(*builtin.ExitError); ok {
+				// 返回 ExitError，让调用者决定如何处理
+				return exitErr
+			}
+			if scriptExitErr, ok := err.(*executor.ScriptExitError); ok {
+				// 返回 ScriptExitError，让调用者决定如何处理
+				return scriptExitErr
+			}
 			fmt.Fprintf(os.Stderr, "gobash: 第%d行: %v\n", lineNum, err)
 			fmt.Fprintf(os.Stderr, "  %s\n", statement)
 			if s.options["e"] {
+				// 检查是否已经是退出错误
+				if _, ok := err.(*builtin.ExitError); ok {
+					return err
+				}
+				if _, ok := err.(*executor.ScriptExitError); ok {
+					return err
+				}
 				return fmt.Errorf("脚本执行失败（第%d行）: %v", lineNum, err)
 			}
 		}
@@ -313,10 +358,10 @@ func (s *Shell) isStatementComplete(statement string) bool {
 	if statement == "" {
 		return true
 	}
-	
+
 	// 使用更精确的匹配来统计关键字（必须是独立的单词）
 	words := strings.Fields(statement)
-	
+
 	caseCount := 0
 	for _, word := range words {
 		if word == "case" {
@@ -324,7 +369,7 @@ func (s *Shell) isStatementComplete(statement string) bool {
 		}
 	}
 	esacCount := strings.Count(statement, "esac")
-	
+
 	ifCount := 0
 	for _, word := range words {
 		if word == "if" {
@@ -332,38 +377,38 @@ func (s *Shell) isStatementComplete(statement string) bool {
 		}
 	}
 	fiCount := strings.Count(statement, "fi")
-	
+
 	forCount := 0
 	for _, word := range words {
 		if word == "for" {
 			forCount++
 		}
 	}
-	
+
 	whileCount := 0
 	for _, word := range words {
 		if word == "while" {
 			whileCount++
 		}
 	}
-	
+
 	doneCount := 0
 	for _, word := range words {
 		if word == "done" {
 			doneCount++
 		}
 	}
-	
+
 	// 检查case语句
 	if caseCount > esacCount {
 		return false
 	}
-	
+
 	// 检查if语句
 	if ifCount > fiCount {
 		return false
 	}
-	
+
 	// 检查for/while语句
 	// 注意：while循环需要do关键字，所以如果whileCount > 0但没有done，且没有do，语句未完成
 	if (forCount + whileCount) > doneCount {
@@ -376,8 +421,8 @@ func (s *Shell) isStatementComplete(statement string) bool {
 			doCount += strings.Count(statement, pattern)
 		}
 		// 也检查行首的do（do在行首）
-		if strings.HasPrefix(strings.TrimSpace(statement), "do ") || 
-		   strings.HasPrefix(strings.TrimSpace(statement), "do\n") {
+		if strings.HasPrefix(strings.TrimSpace(statement), "do ") ||
+			strings.HasPrefix(strings.TrimSpace(statement), "do\n") {
 			doCount++
 		}
 		// 如果while循环没有do关键字，语句未完成
@@ -393,7 +438,7 @@ func (s *Shell) isStatementComplete(statement string) bool {
 			return false
 		}
 	}
-	
+
 	return true
 }
 
@@ -409,6 +454,13 @@ func (s *Shell) executeLine(line string) error {
 	commands := splitCommands(line)
 	for _, cmd := range commands {
 		if err := s.executeCommand(cmd); err != nil {
+			// 检查是否是 exit 命令或脚本退出错误，如果是，直接返回
+			if _, ok := err.(*builtin.ExitError); ok {
+				return err
+			}
+			if _, ok := err.(*executor.ScriptExitError); ok {
+				return err
+			}
 			return err
 		}
 	}
@@ -443,7 +495,7 @@ func (s *Shell) executeCommand(input string) error {
 
 	// 词法分析
 	l := lexer.New(input)
-	
+
 	// 语法分析
 	p := parser.New(l)
 	program := p.ParseProgram()
@@ -528,7 +580,7 @@ func (s *Shell) handleSetCommand(args []string) error {
 		}
 		return nil
 	}
-	
+
 	// 处理选项
 	// 检查是否有 -- 参数，如果有，则 -- 后面的所有参数都是位置参数
 	argIndex := 0
@@ -540,7 +592,7 @@ func (s *Shell) handleSetCommand(args []string) error {
 		}
 		argIndex++
 	}
-	
+
 	// 如果找到了 --，处理位置参数
 	if positionalArgsStart >= 0 {
 		// 先清空所有现有的位置参数
@@ -554,7 +606,7 @@ func (s *Shell) handleSetCommand(args []string) error {
 				}
 			}
 		}
-		
+
 		// 设置新的位置参数（-- 后面的所有参数）
 		positionalArgs := args[positionalArgsStart:]
 		for i, arg := range positionalArgs {
@@ -565,20 +617,20 @@ func (s *Shell) handleSetCommand(args []string) error {
 		// 跳过处理 -- 和位置参数
 		args = args[:positionalArgsStart-1]
 	}
-	
+
 	// 处理选项（跳过已经处理过的 -- 和位置参数）
 	for _, arg := range args {
-		
+
 		if strings.HasPrefix(arg, "-") || strings.HasPrefix(arg, "+") {
 			// 解析选项，如 -x, -e, +x, +e
 			enable := arg[0] == '-'
 			optionStr := arg[1:]
-			
+
 			// 处理多个选项，如 -xe
 			for _, opt := range optionStr {
 				optStr := string(opt)
 				s.options[optStr] = enable
-				
+
 				// 同步到执行器
 				s.executor.SetOptions(s.options)
 			}
@@ -590,7 +642,7 @@ func (s *Shell) handleSetCommand(args []string) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -649,7 +701,7 @@ func splitCommands(line string) []string {
 				i++ // 跳过第二个分号
 				continue
 			}
-			
+
 			// 检查分号后的单词是否是控制流关键字（do、then等）
 			// 如果是，这个分号不应该分割命令
 			remaining := line[i+1:]
@@ -662,7 +714,7 @@ func splitCommands(line string) []string {
 					nextWord = strings.ToLower(parts[0])
 				}
 			}
-			
+
 			// 控制流关键字列表（分号后可能出现的）
 			controlFlowAfterSemicolon := []string{"do", "then", "else", "elif"}
 			shouldSplit := true
@@ -672,7 +724,7 @@ func splitCommands(line string) []string {
 					break
 				}
 			}
-			
+
 			if shouldSplit {
 				// 分号且不在引号内，分割命令
 				cmd := strings.TrimSpace(current.String())
@@ -755,4 +807,3 @@ func (s *Shell) handleHistoryCommand(args []string) error {
 	s.history.Print()
 	return nil
 }
-
