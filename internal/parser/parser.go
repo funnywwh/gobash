@@ -213,16 +213,24 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 			for p.curToken.Type != lexer.EOF && 
 			    p.curToken.Type != lexer.NEWLINE && 
 			    p.curToken.Type != lexer.SEMICOLON &&
-			    p.curToken.Type != lexer.WHITESPACE {
+			    p.curToken.Type != lexer.WHITESPACE &&
+			    p.curToken.Type != lexer.RPAREN {
 				if p.curToken.Type == lexer.STRING || 
 				   p.curToken.Type == lexer.STRING_SINGLE || 
 				   p.curToken.Type == lexer.STRING_DOUBLE {
 					value.WriteString(p.curToken.Literal)
 				} else if p.curToken.Type == lexer.IDENTIFIER {
 					value.WriteString(p.curToken.Literal)
+				} else if p.curToken.Type == lexer.NUMBER {
+					value.WriteString(p.curToken.Literal)
 				} else if p.curToken.Type == lexer.ARITHMETIC_EXPANSION {
 					// 处理算术展开 $((expr))
+					// lexer 返回的 Literal 只是表达式部分，需要包装成 $((expr)) 格式
+					value.WriteString("$((")
 					value.WriteString(p.curToken.Literal)
+					value.WriteString("))")
+					p.nextToken() // 移动到下一个 token
+					continue
 				} else if p.curToken.Type == lexer.DOLLAR {
 					// 处理 $VAR 或 $((expr)) 的开始
 					// 先检查是否是算术展开 $((expr))
@@ -366,90 +374,25 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 		   p.curToken.Type == lexer.TIME {
 			stmt.Args = append(stmt.Args, p.parseExpression())
 			// parseExpression 不移动 token，所以 curToken 仍然是当前参数 token
-			// 检查 peekToken 是否是换行符或语句结束标记
-			if p.peekToken.Type == lexer.NEWLINE ||
-			   p.peekToken.Type == lexer.SEMICOLON ||
-			   p.peekToken.Type == lexer.FI ||
-			   p.peekToken.Type == lexer.DONE ||
-			   p.peekToken.Type == lexer.ELSE ||
-			   p.peekToken.Type == lexer.ELIF ||
-			   p.peekToken.Type == lexer.ESAC ||
-			   p.peekToken.Type == lexer.EOF {
-				// 移动到换行符或结束标记，然后停止解析
-				p.nextToken()
+			// 移动到下一个 token
+			p.nextToken()
+			// 检查当前 token 是否是换行符或语句结束标记
+			if p.curToken.Type == lexer.NEWLINE ||
+			   p.curToken.Type == lexer.SEMICOLON ||
+			   p.curToken.Type == lexer.FI ||
+			   p.curToken.Type == lexer.DONE ||
+			   p.curToken.Type == lexer.ELSE ||
+			   p.curToken.Type == lexer.ELIF ||
+			   p.curToken.Type == lexer.ESAC ||
+			   p.curToken.Type == lexer.EOF {
+				// 遇到换行符或结束标记，停止解析
 				break
 			}
-			// 如果 peekToken 不是换行符，但 curToken 是字符串，且已经解析了至少一个参数
-			// 检查下一个token是否是下一个语句的开始（如标识符、关键字）
-			if (p.curToken.Type == lexer.STRING || 
-			    p.curToken.Type == lexer.STRING_SINGLE || 
-			    p.curToken.Type == lexer.STRING_DOUBLE) &&
-			   len(stmt.Args) > 0 {
-				// 检查 peekToken 是否是下一个语句的开始
-				if p.peekToken.Type == lexer.IDENTIFIER ||
-				   p.peekToken.Type == lexer.IF ||
-				   p.peekToken.Type == lexer.FOR ||
-				   p.peekToken.Type == lexer.WHILE ||
-				   p.peekToken.Type == lexer.CASE {
-					// 检查是否是变量赋值（标识符后跟=）
-					if p.peekToken.Type == lexer.IDENTIFIER {
-						// 需要检查再下一个token是否是=
-						// 但这里我们简化处理：如果peekToken是标识符，且已经解析了参数，停止
-						// 因为变量赋值通常不会出现在命令参数中
-						break
-					}
-					// 如果是关键字，停止解析
-					break
-				}
-			}
+			// 继续解析下一个参数
+			continue
 		}
 		
-		// 在移动到下一个token之前，检查下一个token是否是换行符或语句结束标记
-		// 如果是，停止解析参数（换行符是语句分隔符）
-		// 注意：需要检查peekToken，因为curToken可能仍然是当前参数
-		if p.peekToken.Type == lexer.NEWLINE ||
-		   p.peekToken.Type == lexer.SEMICOLON ||
-		   p.peekToken.Type == lexer.FI ||
-		   p.peekToken.Type == lexer.DONE ||
-		   p.peekToken.Type == lexer.ELSE ||
-		   p.peekToken.Type == lexer.ELIF ||
-		   p.peekToken.Type == lexer.ESAC ||
-		   p.peekToken.Type == lexer.EOF {
-			break
-		}
-		
-		// 如果当前token是ARITHMETIC_EXPANSION，且下一个token是标识符（可能是变量赋值），停止解析
-		// 例如：echo "test" $((i+1)) i=... 应该停止在 $((i+1)) 处
-		if p.curToken.Type == lexer.ARITHMETIC_EXPANSION && 
-		   p.peekToken.Type == lexer.IDENTIFIER {
-			// 检查是否是变量赋值（下一个token是标识符，再下一个可能是=）
-			// 这里简化处理：如果peekToken是标识符，且已经解析了至少一个参数，停止
-			if len(stmt.Args) > 0 {
-				break
-			}
-		}
-		
-		// 如果下一个token是关键字或标识符（可能是下一个命令），且当前已经解析了至少一个参数，停止解析
-		// 这可以防止将下一个命令解析为当前命令的参数
-		if len(stmt.Args) > 0 {
-			// 检查是否是关键字（这些不应该被解析为参数）
-			if p.peekToken.Type == lexer.CASE || p.peekToken.Type == lexer.IF ||
-			   p.peekToken.Type == lexer.THEN || p.peekToken.Type == lexer.ELSE ||
-			   p.peekToken.Type == lexer.ELIF || p.peekToken.Type == lexer.FI ||
-			   p.peekToken.Type == lexer.FOR || p.peekToken.Type == lexer.WHILE ||
-			   p.peekToken.Type == lexer.DO || p.peekToken.Type == lexer.DONE ||
-			   p.peekToken.Type == lexer.ESAC {
-				break
-			}
-			// 检查是否是标识符（可能是下一个命令）
-			if p.peekToken.Type == lexer.IDENTIFIER {
-				peekLiteral := p.peekToken.Literal
-				if peekLiteral == "echo" || peekLiteral == "exit" {
-					break
-				}
-			}
-		}
-		
+		// 如果不是参数类型的 token，移动到下一个
 		p.nextToken()
 	}
 

@@ -504,40 +504,41 @@ func (l *Lexer) readString(quote byte) Token {
 	startColumn := l.column
 	l.readChar() // 跳过开始的引号
 
-
 	var literal strings.Builder
-	for l.ch != quote && l.ch != 0 {
+	
+	for l.ch != 0 {
 		if quote == '"' && l.ch == '\\' {
-			// 双引号内允许转义
-			// 通用方法：只处理 \"，其他转义序列（包括 \$）都保持为两个字符
-			// 这样在 expandVariablesInString 中可以统一处理所有转义
-			l.readChar()
-			if l.ch != 0 {
-				if l.ch == '"' {
-					// \" 转义为 "
+			// 双引号内的转义处理
+			nextPos := l.readPosition
+			if nextPos < len(l.input) {
+				nextCh := l.input[nextPos]
+				if nextCh == '"' {
+					// \" 转义为 "，只保存 " 而不保存 \
 					literal.WriteByte('"')
-					l.readChar()
+					l.readChar() // 跳过 \
+					l.readChar() // 跳过 "
+					continue
 				} else {
-					// 其他转义序列（\$、\\、\n、\t等）保持为两个字符
-					// 注意：必须保留 \ 和转义字符，不能只保留转义字符
-					// 不特殊处理 \$，留给展开阶段处理
-					escapedChar := l.ch
-					literal.WriteByte('\\')
-					literal.WriteByte(escapedChar)
+					// 其他转义序列保持原样（\$、\\、\n等）
+					literal.WriteByte(l.ch) // 写入 \
 					l.readChar()
+					if l.ch != 0 && l.ch != quote {
+						literal.WriteByte(l.ch) // 写入转义字符
+						l.readChar()
+					}
+					continue
 				}
-			} else {
-				// \ 后面没有字符，只写入 \
-				literal.WriteByte('\\')
 			}
-		} else if quote == '"' && l.ch == '$' {
-			// 双引号内需要保留 $ 以便后续展开变量
-			literal.WriteByte(l.ch)
-			l.readChar()
-		} else {
-			literal.WriteByte(l.ch)
-			l.readChar()
 		}
+		
+		if l.ch == quote {
+			// 找到结束引号
+			break
+		}
+		
+		// 普通字符
+		literal.WriteByte(l.ch)
+		l.readChar()
 	}
 
 	var result string
@@ -548,10 +549,6 @@ func (l *Lexer) readString(quote byte) Token {
 		// 未闭合的引号
 		result = literal.String()
 	}
-
-
-
-
 
 	return Token{
 		Type:    STRING,
@@ -611,14 +608,18 @@ func (l *Lexer) readArithmeticExpansion() Token {
 			l.readChar()
 		} else if l.ch == ')' {
 			depth--
-			if depth > 0 {
+			if depth > 2 {
+				// depth > 2 表示这是表达式内部的 )，应该写入 literal
 				literal.WriteByte(l.ch)
-			}
-			if depth == 0 {
+				l.readChar()
+			} else if depth == 0 {
+				// depth == 0 表示这是结束的 ))，应该跳过
 				l.readChar() // 跳过结束括号
 				break
+			} else {
+				// depth == 1 或 2，这是结束的 )) 的一部分，不应该写入 literal
+				l.readChar()
 			}
-			l.readChar()
 		} else {
 			literal.WriteByte(l.ch)
 			l.readChar()
