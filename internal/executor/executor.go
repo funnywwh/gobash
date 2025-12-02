@@ -271,6 +271,11 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 			fmt.Fprintf(os.Stderr, "\n")
 		}
 		
+		// 处理内置命令的管道
+		if cmd.Pipe != nil {
+			return e.executeBuiltinPipe(cmd, builtinFunc, args, cmd.Pipe)
+		}
+		
 		// 处理内置命令的重定向
 		if len(cmd.Redirects) > 0 {
 		err := e.executeBuiltinWithRedirect(cmdName, builtinFunc, args, cmd.Redirects)
@@ -644,6 +649,125 @@ func (e *Executor) executePipe(left, right *parser.CommandStatement) error {
 		// 返回中断错误
 		return fmt.Errorf("命令被中断")
 	}
+}
+
+// executeBuiltinPipe 执行内置命令在管道中的情况
+func (e *Executor) executeBuiltinPipe(left *parser.CommandStatement, builtinFunc builtin.BuiltinFunc, args []string, right *parser.CommandStatement) error {
+	// 创建管道
+	pipeReader, pipeWriter, err := os.Pipe()
+	if err != nil {
+		return fmt.Errorf("创建管道失败: %v", err)
+	}
+	
+	// 保存原始的 stdout
+	oldStdout := os.Stdout
+	
+	// 在 goroutine 中执行内置命令，将输出写入管道
+	done := make(chan error, 1)
+	go func() {
+		// 将 stdout 重定向到管道
+		os.Stdout = pipeWriter
+		defer func() {
+			// 恢复 stdout
+			os.Stdout = oldStdout
+			// 关闭管道写入端
+			pipeWriter.Close()
+		}()
+		
+		// 为需要访问JobManager的命令设置引用
+		cmdName := e.evaluateExpression(left.Command)
+		if cmdName == "jobs" || cmdName == "fg" || cmdName == "bg" {
+			builtin.SetJobManager(e.jobs)
+		}
+		
+		// 执行内置命令
+		err := builtinFunc(args, e.env)
+		if err != nil {
+			// 检查是否是 exit 命令
+			if exitErr, ok := err.(*builtin.ExitError); ok {
+				done <- exitErr
+				return
+			}
+			done <- fmt.Errorf("%s: %v", cmdName, err)
+			return
+		}
+		done <- nil
+	}()
+	
+	// 准备右侧命令
+	rightCmdName := e.evaluateExpression(right.Command)
+	if rightCmdName == "" {
+		pipeReader.Close()
+		return fmt.Errorf("管道右侧命令名为空")
+	}
+	
+	rightArgs := make([]string, len(right.Args))
+	for i, arg := range right.Args {
+		rightArgs[i] = e.evaluateExpression(arg)
+	}
+	
+	// 检查右侧命令是否为内置命令
+	if rightBuiltinFunc, ok := e.builtins[rightCmdName]; ok {
+		// 右侧也是内置命令，需要特殊处理
+		// 将 stdin 重定向到管道读取端
+		oldStdin := os.Stdin
+		os.Stdin = pipeReader
+		defer func() {
+			os.Stdin = oldStdin
+			pipeReader.Close()
+		}()
+		
+		// 等待左侧命令完成
+		if err := <-done; err != nil {
+			return err
+		}
+		
+		// 为需要访问JobManager的命令设置引用
+		if rightCmdName == "jobs" || rightCmdName == "fg" || rightCmdName == "bg" {
+			builtin.SetJobManager(e.jobs)
+		}
+		
+		// 执行右侧内置命令
+		if err := rightBuiltinFunc(rightArgs, e.env); err != nil {
+			// 检查是否是 exit 命令
+			if exitErr, ok := err.(*builtin.ExitError); ok {
+				return exitErr
+			}
+			return fmt.Errorf("%s: %v", rightCmdName, err)
+		}
+		
+		return nil
+	}
+	
+	// 右侧是外部命令
+	rightCmd := exec.Command(rightCmdName, rightArgs...)
+	rightCmd.Env = e.getEnvArray()
+	rightCmd.Stdin = pipeReader
+	rightCmd.Stdout = os.Stdout
+	rightCmd.Stderr = os.Stderr
+	
+	// 启动右侧命令
+	if err := rightCmd.Start(); err != nil {
+		pipeReader.Close()
+		return fmt.Errorf("启动右侧命令 '%s' 失败: %v", rightCmdName, err)
+	}
+	
+	// 等待左侧命令完成
+	if err := <-done; err != nil {
+		rightCmd.Process.Kill()
+		pipeReader.Close()
+		return err
+	}
+	
+	// 关闭管道读取端，让右侧命令知道输入结束
+	pipeReader.Close()
+	
+	// 等待右侧命令完成
+	if err := rightCmd.Wait(); err != nil {
+		return fmt.Errorf("等待右侧命令 '%s' 完成失败: %v", rightCmdName, err)
+	}
+	
+	return nil
 }
 
 // setupRedirects 设置重定向

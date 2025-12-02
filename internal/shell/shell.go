@@ -507,6 +507,13 @@ func (s *Shell) executeCommand(input string) error {
 
 	// 执行
 	if err := s.executor.Execute(program); err != nil {
+		// 检查是否是 exit 命令或脚本退出错误，如果是，直接返回，不包装
+		if _, ok := err.(*builtin.ExitError); ok {
+			return err
+		}
+		if _, ok := err.(*executor.ScriptExitError); ok {
+			return err
+		}
 		return fmt.Errorf("执行错误: %v", err)
 	}
 
