@@ -202,11 +202,11 @@
   - [x] 正确处理嵌套（在 expandCommandSubstitutionCommand 中展开嵌套的命令替换）
   - [x] 正确处理转义（在 expandVariablesInString 中已处理）
   - [x] 正确处理退出码（添加了 getExitCode 函数，命令替换在子shell中执行）
-- [ ] 改进数组访问
-  - [ ] `${arr[0]}` - 普通数组
-  - [ ] `${arr[key]}` - 关联数组
-  - [ ] `${arr[@]}` - 数组展开
-  - [ ] `${arr[*]}` - 数组展开
+- [x] 改进数组访问
+  - [x] `${arr[0]}` - 普通数组（通过 getArrayElement 实现）
+  - [x] `${arr[key]}` - 关联数组（通过 getArrayElement 实现）
+  - [x] `${arr[@]}` - 数组展开（通过 expandArray 实现，每个元素作为单独的词）
+  - [x] `${arr[*]}` - 数组展开（通过 expandArray 实现，所有元素作为一个词，使用 IFS 分隔）
 - [ ] 实现单词分割（IFS）
   - [ ] 根据 IFS 分割单词
   - [ ] 正确处理 IFS 为空的情况

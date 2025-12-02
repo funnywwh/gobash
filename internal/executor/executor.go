@@ -1196,6 +1196,65 @@ func (e *Executor) getArrayElement(varExpr string) string {
 	return arr[index]
 }
 
+// expandArray 展开数组
+// 如果 quoted 为 true，返回每个元素作为单独的词（用空格分隔）
+// 如果 quoted 为 false，返回所有元素作为一个词（用 IFS 的第一个字符分隔）
+func (e *Executor) expandArray(arrName string, quoted bool) string {
+	// 检查是否是关联数组
+	if arrayType, ok := e.arrayTypes[arrName]; ok && arrayType == "assoc" {
+		assocArr, ok := e.assocArrays[arrName]
+		if !ok {
+			return ""
+		}
+		// 关联数组展开：返回所有值
+		values := make([]string, 0, len(assocArr))
+		for _, val := range assocArr {
+			values = append(values, val)
+		}
+		if quoted {
+			// ${arr[@]} - 每个元素作为单独的词
+			return strings.Join(values, " ")
+		}
+		// ${arr[*]} - 所有元素作为一个词
+		ifs := e.env["IFS"]
+		if ifs == "" {
+			ifs = " \t\n"
+		}
+		separator := ""
+		if len(ifs) > 0 {
+			separator = string(ifs[0])
+		}
+		if separator == "" {
+			separator = " "
+		}
+		return strings.Join(values, separator)
+	}
+	
+	// 普通数组
+	arr, ok := e.arrays[arrName]
+	if !ok {
+		return ""
+	}
+	
+	if quoted {
+		// ${arr[@]} - 每个元素作为单独的词
+		return strings.Join(arr, " ")
+	}
+	// ${arr[*]} - 所有元素作为一个词
+	ifs := e.env["IFS"]
+	if ifs == "" {
+		ifs = " \t\n"
+	}
+	separator := ""
+	if len(ifs) > 0 {
+		separator = string(ifs[0])
+	}
+	if separator == "" {
+		separator = " "
+	}
+	return strings.Join(arr, separator)
+}
+
 // executeAssocArrayAssignment 执行关联数组单个元素赋值
 // 例如：arr[key]=value
 func (e *Executor) executeAssocArrayAssignment(assignment string, args []parser.Expression) error {
