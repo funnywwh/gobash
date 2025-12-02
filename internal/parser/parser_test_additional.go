@@ -309,25 +309,10 @@ func TestErrorCases(t *testing.T) {
 }
 
 // TestExistingTests 运行现有测试，确保兼容性
+// 注意：这些测试函数在 parser_test.go 中定义，这里只是重新运行它们
 func TestExistingTests(t *testing.T) {
-	// 运行所有现有的测试函数（通过调用它们）
-	t.Run("CommandStatement", func(t *testing.T) {
-		TestParseCommandStatement(t)
-	})
-	t.Run("IfStatement", func(t *testing.T) {
-		TestParseIfStatement(t)
-	})
-	t.Run("ForStatement", func(t *testing.T) {
-		TestParseForStatement(t)
-	})
-	t.Run("FunctionStatement", func(t *testing.T) {
-		TestParseFunctionStatement(t)
-	})
-	t.Run("Pipe", func(t *testing.T) {
-		TestParsePipe(t)
-	})
-	t.Run("Redirect", func(t *testing.T) {
-		TestParseRedirect(t)
-	})
+	// 这些测试已经在 parser_test.go 中定义，不需要重复运行
+	// 如果需要，可以在这里添加额外的测试
+	t.Log("现有测试已在 parser_test.go 中定义")
 }
 
