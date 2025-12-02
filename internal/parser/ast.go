@@ -58,9 +58,10 @@ func (cs *CommandStatement) String() string {
 
 // Redirect 重定向
 type Redirect struct {
-	Type   RedirectType
-	FD     int // 文件描述符，默认0=stdin, 1=stdout, 2=stderr
-	Target Expression
+	Type        RedirectType
+	FD          int // 文件描述符，默认0=stdin, 1=stdout, 2=stderr
+	Target      Expression
+	HereDoc     *HereDocument // Here-document 信息（如果适用）
 }
 
 type RedirectType int
@@ -70,7 +71,21 @@ const (
 	REDIRECT_OUTPUT
 	REDIRECT_APPEND
 	REDIRECT_HEREDOC
+	REDIRECT_HEREDOC_STRIP
+	REDIRECT_HERESTRING
+	REDIRECT_DUP_IN
+	REDIRECT_DUP_OUT
+	REDIRECT_CLOBBER
+	REDIRECT_RW
 )
+
+// HereDocument Here-document 信息
+type HereDocument struct {
+	Delimiter   string // 分隔符
+	Quoted      bool   // 分隔符是否带引号（带引号时不展开变量）
+	StripTabs   bool   // 是否剥离前导制表符（<<-）
+	Content     string // Here-document 内容（在执行时填充）
+}
 
 // IfStatement if语句
 type IfStatement struct {
@@ -261,5 +276,57 @@ func (ps *ProcessSubstitution) String() string {
 		return "<(" + ps.Command + ")"
 	}
 	return ">(" + ps.Command + ")"
+}
+
+// ParamExpandExpression 参数展开表达式
+// 例如：${VAR:-default}, ${VAR#pattern}, ${VAR:offset:length} 等
+type ParamExpandExpression struct {
+	VarName string // 变量名
+	Op      string // 操作符（:-, :=, :?, :+, #, ##, %, %%, :, #, ! 等）
+	Word    string // 操作数（默认值、模式、偏移量等）
+	Flags   int    // 标志位（用于存储额外的信息）
+}
+
+func (pe *ParamExpandExpression) expressionNode() {}
+func (pe *ParamExpandExpression) String() string {
+	if pe.Op != "" {
+		return fmt.Sprintf("${%s%s%s}", pe.VarName, pe.Op, pe.Word)
+	}
+	return fmt.Sprintf("${%s}", pe.VarName)
+}
+
+// SubshellCommand 子shell 命令
+// 例如：(command)
+type SubshellCommand struct {
+	Body *BlockStatement
+}
+
+func (sc *SubshellCommand) statementNode() {}
+func (sc *SubshellCommand) String() string {
+	return "(subshell)"
+}
+
+// GroupCommand 命令组
+// 例如：{ command; }
+type GroupCommand struct {
+	Body *BlockStatement
+}
+
+func (gc *GroupCommand) statementNode() {}
+func (gc *GroupCommand) String() string {
+	return "{group}"
+}
+
+// CommandChain 命令链
+// 例如：cmd1; cmd2, cmd1 && cmd2, cmd1 || cmd2
+type CommandChain struct {
+	Left     Statement
+	Right    Statement
+	Operator string // ";", "&&", "||"
+}
+
+func (cc *CommandChain) statementNode() {}
+func (cc *CommandChain) String() string {
+	return fmt.Sprintf("%s %s %s", cc.Left.String(), cc.Operator, cc.Right.String())
 }
 

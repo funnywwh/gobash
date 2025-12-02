@@ -2,6 +2,7 @@
 package executor
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
@@ -718,6 +719,63 @@ func (e *Executor) setupRedirects(cmd *exec.Cmd, redirects []*parser.Redirect) e
 				return err
 			}
 			cmd.Stdin = file
+		case parser.REDIRECT_HEREDOC, parser.REDIRECT_HEREDOC_STRIP:
+			// Here-document 处理
+			if redirect.HereDoc != nil {
+				content := redirect.HereDoc.Content
+				if content == "" {
+					// 如果内容为空，尝试从标准输入读取（这在交互模式下可能需要）
+					// 对于脚本模式，内容应该在解析时已经填充
+					content = e.readHereDocument(redirect.HereDoc.Delimiter, redirect.HereDoc.Quoted, redirect.HereDoc.StripTabs)
+					redirect.HereDoc.Content = content
+				}
+				// 创建临时文件或使用字符串作为输入
+				reader := strings.NewReader(content)
+				cmd.Stdin = io.NopCloser(reader)
+			}
+		case parser.REDIRECT_HERESTRING:
+			// Here-string (<<<) 处理
+			if redirect.Target != nil {
+				content := e.evaluateExpression(redirect.Target)
+				reader := strings.NewReader(content)
+				cmd.Stdin = io.NopCloser(reader)
+			}
+		case parser.REDIRECT_DUP_IN:
+			// <& 复制文件描述符
+			_, err := strconv.Atoi(target)
+			if err != nil {
+				return fmt.Errorf("无效的文件描述符: %s", target)
+			}
+			// 这里简化处理，实际应该复制文件描述符
+			// 在 Go 中，这需要更复杂的处理
+		case parser.REDIRECT_DUP_OUT:
+			// >& 复制文件描述符
+			_, err := strconv.Atoi(target)
+			if err != nil {
+				return fmt.Errorf("无效的文件描述符: %s", target)
+			}
+			// 这里简化处理，实际应该复制文件描述符
+		case parser.REDIRECT_CLOBBER:
+			// >| 强制覆盖（与 > 相同，但忽略 noclobber 选项）
+			file, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+			if err != nil {
+				return err
+			}
+			if redirect.FD == 1 {
+				cmd.Stdout = file
+			} else if redirect.FD == 2 {
+				cmd.Stderr = file
+			} else {
+				file.Close()
+			}
+		case parser.REDIRECT_RW:
+			// <> 读写重定向
+			file, err := os.OpenFile(target, os.O_CREATE|os.O_RDWR, 0644)
+			if err != nil {
+				return err
+			}
+			cmd.Stdin = file
+			cmd.Stdout = file
 		}
 	}
 	return nil
@@ -2085,6 +2143,37 @@ func (e *Executor) parseDoubleBracketPrimaryExpression(args []string, pos int) (
 	result := err == nil
 	
 	return result, endPos, nil
+}
+
+// readHereDocument 读取 Here-document 内容
+// 从标准输入读取，直到找到分隔符
+func (e *Executor) readHereDocument(delimiter string, quoted bool, stripTabs bool) string {
+	var content strings.Builder
+	scanner := bufio.NewScanner(os.Stdin)
+	
+	for scanner.Scan() {
+		line := scanner.Text()
+		
+		// 检查是否是分隔符
+		if strings.TrimSpace(line) == delimiter {
+			break
+		}
+		
+		// 如果 stripTabs 为 true，剥离前导制表符
+		if stripTabs {
+			line = strings.TrimLeft(line, "\t")
+		}
+		
+		// 如果 quoted 为 false，展开变量
+		if !quoted {
+			line = e.expandVariablesInString(line)
+		}
+		
+		content.WriteString(line)
+		content.WriteString("\n")
+	}
+	
+	return content.String()
 }
 
 // splitEnv 分割环境变量字符串

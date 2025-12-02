@@ -707,19 +707,111 @@ func (l *Lexer) readString(quote byte) Token {
 }
 
 // readCommandSubstitution 读取命令替换（反引号）
+// 正确处理嵌套的反引号、引号等
 func (l *Lexer) readCommandSubstitution() Token {
 	startLine := l.line
 	startColumn := l.column
 	l.readChar() // 跳过开始的反引号
 	
 	var literal strings.Builder
-	for l.ch != '`' && l.ch != 0 {
-		if l.ch == '\\' {
+	backtickDepth := 1 // 反引号深度（支持嵌套的反引号，虽然 bash 不支持，但为了健壮性）
+	
+	for backtickDepth > 0 && l.ch != 0 {
+		if l.ch == '`' {
+			// 检查是否是转义的反引号
+			if literal.Len() > 0 {
+				lastChar := literal.String()[literal.Len()-1]
+				if lastChar == '\\' {
+					// 转义的反引号，写入字面量
+					literal.WriteByte(l.ch)
+					l.readChar()
+					continue
+				}
+			}
+			backtickDepth--
+			if backtickDepth == 0 {
+				l.readChar() // 跳过结束反引号
+				break
+			}
+			literal.WriteByte(l.ch)
+			l.readChar()
+		} else if l.ch == '\'' || l.ch == '"' {
+			// 处理引号内的内容（引号内的反引号不应该结束命令替换）
+			quote := l.ch
+			literal.WriteByte(l.ch)
+			l.readChar()
+			for l.ch != quote && l.ch != 0 {
+				if l.ch == '\\' && quote == '"' {
+					// 双引号内的转义
+					literal.WriteByte(l.ch)
+					l.readChar()
+					if l.ch != 0 {
+						literal.WriteByte(l.ch)
+						l.readChar()
+					}
+				} else {
+					literal.WriteByte(l.ch)
+					l.readChar()
+				}
+			}
+			if l.ch == quote {
+				literal.WriteByte(l.ch)
+				l.readChar()
+			}
+		} else if l.ch == '\\' {
 			// 转义字符
+			literal.WriteByte(l.ch)
 			l.readChar()
 			if l.ch != 0 {
 				literal.WriteByte(l.ch)
 				l.readChar()
+			}
+		} else if l.ch == '$' && l.peekChar() == '(' {
+			// 嵌套的命令替换 $(...)，需要正确处理
+			literal.WriteByte(l.ch)
+			l.readChar() // 跳过 $
+			literal.WriteByte(l.ch) // 写入 (
+			l.readChar() // 跳过 (
+			parenDepth := 1
+			for parenDepth > 0 && l.ch != 0 {
+				if l.ch == '(' {
+					parenDepth++
+					literal.WriteByte(l.ch)
+					l.readChar()
+				} else if l.ch == ')' {
+					parenDepth--
+					literal.WriteByte(l.ch)
+					if parenDepth == 0 {
+						l.readChar()
+						break
+					}
+					l.readChar()
+				} else if l.ch == '\'' || l.ch == '"' {
+					// 处理引号
+					quote := l.ch
+					literal.WriteByte(l.ch)
+					l.readChar()
+					for l.ch != quote && l.ch != 0 {
+						if l.ch == '\\' && quote == '"' {
+							literal.WriteByte(l.ch)
+							l.readChar()
+							if l.ch != 0 {
+								literal.WriteByte(l.ch)
+								l.readChar()
+							}
+						} else {
+							literal.WriteByte(l.ch)
+							l.readChar()
+						}
+					}
+					if l.ch == quote {
+						literal.WriteByte(l.ch)
+						l.readChar()
+					}
+				} else {
+					literal.WriteByte(l.ch)
+					l.readChar()
+				}
 			}
 		} else {
 			literal.WriteByte(l.ch)
@@ -727,24 +819,16 @@ func (l *Lexer) readCommandSubstitution() Token {
 		}
 	}
 	
-	var result string
-	if l.ch == '`' {
-		result = literal.String()
-		l.readChar() // 跳过结束反引号
-	} else {
-		// 未闭合的反引号
-		result = literal.String()
-	}
-	
 	return Token{
 		Type:    COMMAND_SUBSTITUTION,
-		Literal: result,
+		Literal: literal.String(),
 		Line:    startLine,
 		Column:  startColumn,
 	}
 }
 
 // readArithmeticExpansion 读取算术展开（$((expr))格式）
+// 正确处理嵌套的括号、引号、变量展开等
 func (l *Lexer) readArithmeticExpansion() Token {
 	var literal strings.Builder
 	depth := 2 // 已经有两个开括号
@@ -756,8 +840,8 @@ func (l *Lexer) readArithmeticExpansion() Token {
 			l.readChar()
 		} else if l.ch == ')' {
 			depth--
-			if depth > 2 {
-				// depth > 2 表示这是表达式内部的 )，应该写入 literal
+			if depth >= 2 {
+				// depth >= 2 表示这是表达式内部的 )，应该写入 literal
 				literal.WriteByte(l.ch)
 				l.readChar()
 			} else if depth == 0 {
@@ -765,8 +849,133 @@ func (l *Lexer) readArithmeticExpansion() Token {
 				l.readChar() // 跳过结束括号
 				break
 			} else {
-				// depth == 1 或 2，这是结束的 )) 的一部分，不应该写入 literal
+				// depth == 1，这是结束的 )) 的第一个 )，不应该写入 literal
+				// 但需要检查下一个字符是否是 )
 				l.readChar()
+				if l.ch == ')' {
+					// 这是结束的 ))，跳过
+					l.readChar()
+					break
+				} else {
+					// 这不是结束的 ))，可能是其他情况，写入刚才的 )
+					literal.WriteByte(')')
+				}
+			}
+		} else if l.ch == '\'' || l.ch == '"' {
+			// 处理引号内的内容（虽然算术表达式中引号不常见，但为了健壮性处理）
+			quote := l.ch
+			literal.WriteByte(l.ch)
+			l.readChar()
+			for l.ch != quote && l.ch != 0 {
+				if l.ch == '\\' && quote == '"' {
+					literal.WriteByte(l.ch)
+					l.readChar()
+					if l.ch != 0 {
+						literal.WriteByte(l.ch)
+						l.readChar()
+					}
+				} else {
+					literal.WriteByte(l.ch)
+					l.readChar()
+				}
+			}
+			if l.ch == quote {
+				literal.WriteByte(l.ch)
+				l.readChar()
+			}
+		} else if l.ch == '$' && l.peekChar() == '(' {
+			// 嵌套的命令替换或算术展开
+			peek2 := l.peekChar2()
+			if peek2 == '(' {
+				// $((...)) 嵌套的算术展开，需要完整保留包括结束的 ))
+				literal.WriteByte(l.ch)
+				l.readChar() // 跳过 $
+				literal.WriteByte(l.ch) // 写入第一个 (
+				l.readChar() // 跳过第一个 (
+				literal.WriteByte(l.ch) // 写入第二个 (
+				l.readChar() // 跳过第二个 (
+				nestedDepth := 2
+				for nestedDepth > 0 && l.ch != 0 {
+					if l.ch == '(' {
+						nestedDepth++
+						literal.WriteByte(l.ch)
+						l.readChar()
+					} else if l.ch == ')' {
+						nestedDepth--
+						if nestedDepth >= 2 {
+							// 表达式内部的 )
+							literal.WriteByte(l.ch)
+							l.readChar()
+						} else if nestedDepth == 0 {
+							// 结束的 ))，需要写入两个 )
+							literal.WriteByte(l.ch) // 写入第一个 )
+							l.readChar()
+							if l.ch == ')' {
+								literal.WriteByte(l.ch) // 写入第二个 )
+								l.readChar()
+							}
+							break
+						} else {
+							// depth == 1，这是结束的 )) 的第一个 )
+							literal.WriteByte(l.ch) // 写入第一个 )
+							l.readChar()
+							if l.ch == ')' {
+								literal.WriteByte(l.ch) // 写入第二个 )
+								l.readChar()
+								break
+							}
+						}
+					} else {
+						literal.WriteByte(l.ch)
+						l.readChar()
+					}
+				}
+			} else {
+				// $(...) 命令替换（在算术展开中）
+				literal.WriteByte(l.ch)
+				l.readChar() // 跳过 $
+				literal.WriteByte(l.ch) // 写入 (
+				l.readChar() // 跳过 (
+				nestedDepth := 1
+				for nestedDepth > 0 && l.ch != 0 {
+					if l.ch == '(' {
+						nestedDepth++
+						literal.WriteByte(l.ch)
+						l.readChar()
+					} else if l.ch == ')' {
+						nestedDepth--
+						literal.WriteByte(l.ch)
+						if nestedDepth == 0 {
+							l.readChar()
+							break
+						}
+						l.readChar()
+					} else if l.ch == '\'' || l.ch == '"' {
+						quote := l.ch
+						literal.WriteByte(l.ch)
+						l.readChar()
+						for l.ch != quote && l.ch != 0 {
+							if l.ch == '\\' && quote == '"' {
+								literal.WriteByte(l.ch)
+								l.readChar()
+								if l.ch != 0 {
+									literal.WriteByte(l.ch)
+									l.readChar()
+								}
+							} else {
+								literal.WriteByte(l.ch)
+								l.readChar()
+							}
+						}
+						if l.ch == quote {
+							literal.WriteByte(l.ch)
+							l.readChar()
+						}
+					} else {
+						literal.WriteByte(l.ch)
+						l.readChar()
+					}
+				}
 			}
 		} else {
 			literal.WriteByte(l.ch)
@@ -783,6 +992,7 @@ func (l *Lexer) readArithmeticExpansion() Token {
 }
 
 // readCommandSubstitutionParen 读取命令替换（$(command)格式）
+// 正确处理嵌套的括号、引号、命令替换等
 func (l *Lexer) readCommandSubstitutionParen() Token {
 	var literal strings.Builder
 	depth := 1 // 已经有一个开括号
@@ -802,6 +1012,97 @@ func (l *Lexer) readCommandSubstitutionParen() Token {
 				break
 			}
 			l.readChar()
+		} else if l.ch == '\'' || l.ch == '"' {
+			// 处理引号内的内容（引号内的括号不应该影响深度计数）
+			quote := l.ch
+			literal.WriteByte(l.ch)
+			l.readChar()
+			for l.ch != quote && l.ch != 0 {
+				if l.ch == '\\' && quote == '"' {
+					// 双引号内的转义
+					literal.WriteByte(l.ch)
+					l.readChar()
+					if l.ch != 0 {
+						literal.WriteByte(l.ch)
+						l.readChar()
+					}
+				} else {
+					literal.WriteByte(l.ch)
+					l.readChar()
+				}
+			}
+			if l.ch == quote {
+				literal.WriteByte(l.ch)
+				l.readChar()
+			}
+		} else if l.ch == '`' {
+			// 嵌套的反引号命令替换
+			literal.WriteByte(l.ch)
+			l.readChar()
+			for l.ch != '`' && l.ch != 0 {
+				if l.ch == '\\' {
+					literal.WriteByte(l.ch)
+					l.readChar()
+					if l.ch != 0 {
+						literal.WriteByte(l.ch)
+						l.readChar()
+					}
+				} else {
+					literal.WriteByte(l.ch)
+					l.readChar()
+				}
+			}
+			if l.ch == '`' {
+				literal.WriteByte(l.ch)
+				l.readChar()
+			}
+		} else if l.ch == '$' && l.peekChar() == '(' {
+			// 嵌套的 $(...) 命令替换
+			literal.WriteByte(l.ch)
+			l.readChar() // 跳过 $
+			literal.WriteByte(l.ch) // 写入 (
+			l.readChar() // 跳过 (
+			nestedDepth := 1
+			for nestedDepth > 0 && l.ch != 0 {
+				if l.ch == '(' {
+					nestedDepth++
+					literal.WriteByte(l.ch)
+					l.readChar()
+				} else if l.ch == ')' {
+					nestedDepth--
+					literal.WriteByte(l.ch)
+					if nestedDepth == 0 {
+						l.readChar()
+						break
+					}
+					l.readChar()
+				} else if l.ch == '\'' || l.ch == '"' {
+					// 处理引号
+					quote := l.ch
+					literal.WriteByte(l.ch)
+					l.readChar()
+					for l.ch != quote && l.ch != 0 {
+						if l.ch == '\\' && quote == '"' {
+							literal.WriteByte(l.ch)
+							l.readChar()
+							if l.ch != 0 {
+								literal.WriteByte(l.ch)
+								l.readChar()
+							}
+						} else {
+							literal.WriteByte(l.ch)
+							l.readChar()
+						}
+					}
+					if l.ch == quote {
+						literal.WriteByte(l.ch)
+						l.readChar()
+					}
+				} else {
+					literal.WriteByte(l.ch)
+					l.readChar()
+				}
+			}
 		} else if l.ch == '\\' {
 			// 转义字符
 			literal.WriteByte(l.ch)

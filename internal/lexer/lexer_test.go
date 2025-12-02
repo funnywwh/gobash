@@ -174,3 +174,51 @@ func TestReadIdentifier(t *testing.T) {
 	}
 }
 
+// TestNestedCommandSubstitution 测试嵌套的命令替换
+func TestNestedCommandSubstitution(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"$(echo $(pwd))", "echo $(pwd)"},
+		{"$(echo \"test\")", "echo \"test\""},
+		{"$(echo 'test')", "echo 'test'"},
+		{"$(echo $(echo test))", "echo $(echo test)"},
+	}
+
+	for _, tt := range tests {
+		l := New(tt.input)
+		// 跳过 $ 和 (
+		l.readChar() // 跳过 $
+		l.readChar() // 跳过 (
+		tok := l.readCommandSubstitutionParen()
+		if tok.Literal != tt.expected {
+			t.Errorf("嵌套命令替换读取错误，期望 '%s'，得到 '%s'", tt.expected, tok.Literal)
+		}
+	}
+}
+
+// TestNestedArithmeticExpansion 测试嵌套的算术展开
+func TestNestedArithmeticExpansion(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"$((1 + 2))", "1 + 2"},
+		{"$((1 + (2 + 3)))", "1 + (2 + 3)"},
+		{"$((1 + $((2 + 3))))", "1 + $((2 + 3))"},
+	}
+
+	for _, tt := range tests {
+		l := New(tt.input)
+		// 跳过 $ 和两个 (
+		l.readChar() // 跳过 $
+		l.readChar() // 跳过第一个 (
+		l.readChar() // 跳过第二个 (
+		tok := l.readArithmeticExpansion()
+		if tok.Literal != tt.expected {
+			t.Errorf("嵌套算术展开读取错误，期望 '%s'，得到 '%s'", tt.expected, tok.Literal)
+		}
+	}
+}
+

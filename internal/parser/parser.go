@@ -53,6 +53,8 @@ func (p *Parser) ParseProgram() *Program {
 		}
 		stmt := p.parseStatement()
 		if stmt != nil {
+			// 检查是否是命令链（; && ||）
+			stmt = p.parseCommandChain(stmt)
 			program.Statements = append(program.Statements, stmt)
 		}
 		// case语句已经处理了esac，curToken已经指向esac之后的位置
@@ -63,6 +65,49 @@ func (p *Parser) ParseProgram() *Program {
 	}
 
 	return program
+}
+
+// parseCommandChain 解析命令链（; && ||）
+func (p *Parser) parseCommandChain(left Statement) Statement {
+	for {
+		// 跳过空白字符和换行
+		for p.curToken.Type == lexer.WHITESPACE || p.curToken.Type == lexer.NEWLINE {
+			p.nextToken()
+		}
+		
+		var op string
+		if p.curToken.Type == lexer.SEMICOLON {
+			op = ";"
+			p.nextToken()
+		} else if p.curToken.Type == lexer.AND {
+			op = "&&"
+			p.nextToken()
+		} else if p.curToken.Type == lexer.OR {
+			op = "||"
+			p.nextToken()
+		} else {
+			// 没有操作符，返回
+			return left
+		}
+		
+		// 跳过空白字符和换行
+		for p.curToken.Type == lexer.WHITESPACE || p.curToken.Type == lexer.NEWLINE {
+			p.nextToken()
+		}
+		
+		// 解析右侧命令
+		right := p.parseStatement()
+		if right == nil {
+			return left
+		}
+		
+		// 创建命令链
+		left = &CommandChain{
+			Left:     left,
+			Right:    right,
+			Operator: op,
+		}
+	}
 }
 
 // parseStatement 解析语句
@@ -82,7 +127,17 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseBreakStatement()
 	case lexer.CONTINUE:
 		return p.parseContinueStatement()
-		default:
+	case lexer.LPAREN:
+		// 子shell (command)
+		return p.parseSubshell()
+	case lexer.LBRACE:
+		// 命令组 { command; }
+		return p.parseGroupCommand()
+	case lexer.SEMICOLON:
+		// 空语句，跳过
+		p.nextToken()
+		return p.parseStatement()
+	default:
 		// 检查是否是数组赋值 arr=(1 2 3)
 		// 注意：lexer可能将 arr= 识别为一个IDENTIFIER，所以需要检查是否以 = 结尾
 		var isArrayAssignment bool
@@ -345,10 +400,17 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 			continue
 		}
 		
-		// 检查重定向
+			// 检查重定向（包括所有重定向类型）
 		if p.curToken.Type == lexer.REDIRECT_OUT ||
 		   p.curToken.Type == lexer.REDIRECT_IN ||
-		   p.curToken.Type == lexer.REDIRECT_APPEND {
+		   p.curToken.Type == lexer.REDIRECT_APPEND ||
+		   p.curToken.Type == lexer.REDIRECT_HEREDOC ||
+		   p.curToken.Type == lexer.REDIRECT_HEREDOC_STRIP ||
+		   p.curToken.Type == lexer.REDIRECT_HEREDOC_TABS ||
+		   p.curToken.Type == lexer.REDIRECT_DUP_IN ||
+		   p.curToken.Type == lexer.REDIRECT_DUP_OUT ||
+		   p.curToken.Type == lexer.REDIRECT_CLOBBER ||
+		   p.curToken.Type == lexer.REDIRECT_RW {
 			redirect := p.parseRedirect()
 			if redirect != nil {
 				stmt.Redirects = append(stmt.Redirects, redirect)
@@ -448,13 +510,61 @@ func (p *Parser) parseRedirect() *Redirect {
 				redirect.FD = int(p.curToken.Literal[0] - '0')
 			}
 		}
+	case lexer.REDIRECT_HEREDOC:
+		redirect.Type = REDIRECT_HEREDOC
+		redirect.FD = 0
+		redirect.HereDoc = &HereDocument{StripTabs: false}
+	case lexer.REDIRECT_HEREDOC_STRIP:
+		redirect.Type = REDIRECT_HEREDOC_STRIP
+		redirect.FD = 0
+		redirect.HereDoc = &HereDocument{StripTabs: true}
+	case lexer.REDIRECT_HEREDOC_TABS:
+		redirect.Type = REDIRECT_HERESTRING
+		redirect.FD = 0
+		// Here-string 不需要 HereDoc 结构
+	case lexer.REDIRECT_DUP_IN:
+		redirect.Type = REDIRECT_DUP_IN
+		redirect.FD = 0
+	case lexer.REDIRECT_DUP_OUT:
+		redirect.Type = REDIRECT_DUP_OUT
+		redirect.FD = 1
+	case lexer.REDIRECT_CLOBBER:
+		redirect.Type = REDIRECT_CLOBBER
+		redirect.FD = 1
+	case lexer.REDIRECT_RW:
+		redirect.Type = REDIRECT_RW
+		redirect.FD = 0
 	default:
 		return nil
 	}
 
-	// 读取目标文件
+	// 读取目标文件或 Here-document 分隔符
 	p.nextToken()
-	if p.curToken.Type == lexer.IDENTIFIER || 
+	
+	// 对于 Here-document，分隔符可能是带引号的
+	if redirect.Type == REDIRECT_HEREDOC || redirect.Type == REDIRECT_HEREDOC_STRIP {
+		if redirect.HereDoc != nil {
+			// 检查分隔符是否带引号
+			if p.curToken.Type == lexer.STRING_SINGLE || p.curToken.Type == lexer.STRING_DOUBLE {
+				redirect.HereDoc.Quoted = true
+				// 提取分隔符（移除引号）
+				expr := p.parseExpression()
+				if str, ok := expr.(*StringLiteral); ok {
+					redirect.HereDoc.Delimiter = str.Value
+				} else if ident, ok := expr.(*Identifier); ok {
+					redirect.HereDoc.Delimiter = ident.Value
+				}
+			} else if p.curToken.Type == lexer.IDENTIFIER {
+				redirect.HereDoc.Quoted = false
+				expr := p.parseExpression()
+				if ident, ok := expr.(*Identifier); ok {
+					redirect.HereDoc.Delimiter = ident.Value
+				}
+			}
+			// Here-document 的内容将在执行时读取
+			redirect.Target = nil
+		}
+	} else if p.curToken.Type == lexer.IDENTIFIER || 
 	   p.curToken.Type == lexer.STRING ||
 	   p.curToken.Type == lexer.STRING_SINGLE ||
 	   p.curToken.Type == lexer.STRING_DOUBLE {
@@ -482,8 +592,17 @@ func (p *Parser) parseExpression() Expression {
 		isQuote := p.curToken.Type == lexer.STRING_DOUBLE
 		// 注意：parseExpression 不应该移动 token，所以这里不调用 nextToken
 		return &StringLiteral{Value: p.curToken.Literal, IsQuote: isQuote}
+	case lexer.STRING_DOLLAR_SINGLE:
+		// $'...' ANSI-C 字符串
+		return &StringLiteral{Value: p.curToken.Literal, IsQuote: false}
+	case lexer.STRING_DOLLAR_DOUBLE:
+		// $"..." 国际化字符串
+		return &StringLiteral{Value: p.curToken.Literal, IsQuote: true}
 	case lexer.VAR:
 		return &Variable{Name: p.curToken.Literal}
+	case lexer.PARAM_EXPAND:
+		// 参数展开 ${VAR...}
+		return p.parseParamExpand(p.curToken.Literal)
 	case lexer.COMMAND_SUBSTITUTION:
 		return &CommandSubstitution{Command: p.curToken.Literal}
 	case lexer.ARITHMETIC_EXPANSION:
@@ -505,6 +624,57 @@ func (p *Parser) parseExpression() Expression {
 	default:
 		return &Identifier{Value: p.curToken.Literal}
 	}
+}
+
+// parseParamExpand 解析参数展开表达式
+// 例如：${VAR:-default}, ${VAR#pattern}, ${VAR:offset:length} 等
+func (p *Parser) parseParamExpand(expr string) *ParamExpandExpression {
+	pe := &ParamExpandExpression{}
+	
+	// 解析 ${VAR...} 格式
+	// expr 已经是 VAR... 部分（不包含 ${ 和 }）
+	
+	// 查找操作符
+	// 操作符可能是：:-, :=, :?, :+, #, ##, %, %%, :, #, !, /, //, ^, ^^, ,, ,,
+	// 以及数组访问 [index]
+	
+	// 先检查是否是数组访问
+	if idx := strings.Index(expr, "["); idx != -1 {
+		// 数组访问，如 arr[0] 或 arr[key]
+		pe.VarName = expr[:idx]
+		// 数组索引部分将在变量展开时处理
+		pe.Word = expr[idx:]
+		return pe
+	}
+	
+	// 检查操作符
+	ops := []string{"##", "#", "%%", "%", ":=", ":-", ":?", ":+", "::", ":", "//", "/", "^^", "^", ",,", ","}
+	for _, op := range ops {
+		if idx := strings.Index(expr, op); idx != -1 {
+			pe.VarName = expr[:idx]
+			pe.Op = op
+			pe.Word = expr[idx+len(op):]
+			return pe
+		}
+	}
+	
+	// 检查是否是 ${#VAR} 格式（字符串长度）
+	if len(expr) > 0 && expr[0] == '#' {
+		pe.VarName = expr[1:]
+		pe.Op = "#"
+		return pe
+	}
+	
+	// 检查是否是 ${!VAR} 格式（间接引用）
+	if len(expr) > 0 && expr[0] == '!' {
+		pe.VarName = expr[1:]
+		pe.Op = "!"
+		return pe
+	}
+	
+	// 没有操作符，只是简单的变量
+	pe.VarName = expr
+	return pe
 }
 
 // parseIfStatement 解析if语句
@@ -806,6 +976,40 @@ func (p *Parser) parseContinueStatement() *ContinueStatement {
 			stmt.Level = level
 			p.nextToken() // 跳过标识符
 		}
+	}
+	
+	return stmt
+}
+
+// parseSubshell 解析子shell命令 (command)
+func (p *Parser) parseSubshell() *SubshellCommand {
+	stmt := &SubshellCommand{}
+	
+	p.nextToken() // 跳过 (
+	
+	// 解析命令列表
+	stmt.Body = p.parseBlockStatement()
+	
+	// 检查并跳过 )
+	if p.curToken.Type == lexer.RPAREN {
+		p.nextToken()
+	}
+	
+	return stmt
+}
+
+// parseGroupCommand 解析命令组 { command; }
+func (p *Parser) parseGroupCommand() *GroupCommand {
+	stmt := &GroupCommand{}
+	
+	p.nextToken() // 跳过 {
+	
+	// 解析命令列表
+	stmt.Body = p.parseBlockStatement()
+	
+	// 检查并跳过 }
+	if p.curToken.Type == lexer.RBRACE {
+		p.nextToken()
 	}
 	
 	return stmt
