@@ -466,6 +466,112 @@ func expandPathnamePattern(pattern string) string {
 	return result.String()
 }
 
+// tildeExpand 波浪号展开
+// 根据 bash 的行为：
+// 1. `~` - 当前用户主目录
+// 2. `~user` - 指定用户主目录
+// 3. `~+` - 当前工作目录（PWD）
+// 4. `~-` - 上一个工作目录（OLDPWD）
+func (e *Executor) tildeExpand(text string) string {
+	if !strings.HasPrefix(text, "~") {
+		return text
+	}
+	
+	// 处理 `~`
+	if text == "~" {
+		home := os.Getenv("HOME")
+		if home == "" {
+			// Windows 上使用 USERPROFILE
+			home = os.Getenv("USERPROFILE")
+		}
+		if home == "" {
+			// 如果都没有，返回原始文本
+			return text
+		}
+		return home
+	}
+	
+	// 处理 `~+` - 当前工作目录
+	if strings.HasPrefix(text, "~+") {
+		pwd := os.Getenv("PWD")
+		if pwd == "" {
+			pwd, _ = os.Getwd()
+		}
+		if pwd == "" {
+			return text
+		}
+		if text == "~+" {
+			return pwd
+		}
+		// `~+/path` 格式
+		return pwd + text[2:]
+	}
+	
+	// 处理 `~-` - 上一个工作目录
+	if strings.HasPrefix(text, "~-") {
+		oldpwd := os.Getenv("OLDPWD")
+		if oldpwd == "" {
+			return text
+		}
+		if text == "~-" {
+			return oldpwd
+		}
+		// `~-/path` 格式
+		return oldpwd + text[2:]
+	}
+	
+	// 处理 `~user` - 指定用户主目录
+	if len(text) > 1 {
+		// 查找用户名结束位置（遇到 / 或字符串结束）
+		usernameEnd := 1
+		for usernameEnd < len(text) && text[usernameEnd] != '/' {
+			usernameEnd++
+		}
+		
+		username := text[1:usernameEnd]
+		rest := text[usernameEnd:]
+		
+		// 获取用户主目录
+		// 在 Unix 系统上，可以通过 os/user 包获取
+		// 在 Windows 上，需要特殊处理
+		home := e.getUserHomeDir(username)
+		if home == "" {
+			// 如果找不到用户，返回原始文本
+			return text
+		}
+		
+		return home + rest
+	}
+	
+	return text
+}
+
+// getUserHomeDir 获取用户主目录
+func (e *Executor) getUserHomeDir(username string) string {
+	// 如果是当前用户
+	if username == "" || username == os.Getenv("USER") || username == os.Getenv("USERNAME") {
+		home := os.Getenv("HOME")
+		if home == "" {
+			home = os.Getenv("USERPROFILE")
+		}
+		return home
+	}
+	
+	// 对于其他用户，在 Unix 系统上可以通过 os/user 包获取
+	// 在 Windows 上，可以尝试从环境变量或注册表获取
+	// 这里先实现一个简化版本
+	// TODO: 实现完整的用户主目录查找
+	
+	// 尝试从环境变量获取（某些系统可能设置）
+	envKey := "HOME_" + username
+	if home := os.Getenv(envKey); home != "" {
+		return home
+	}
+	
+	// 如果找不到，返回空字符串（bash 的行为是返回原始文本）
+	return ""
+}
+
 // expandWord 展开 word（可能包含变量、命令替换等）
 func (e *Executor) expandWord(word string) string {
 	// 简单的实现：展开变量
