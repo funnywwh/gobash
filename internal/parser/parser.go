@@ -218,7 +218,18 @@ func (p *Parser) parseCommandStatement() *CommandStatement {
 				if p.curToken.Type == lexer.STRING || 
 				   p.curToken.Type == lexer.STRING_SINGLE || 
 				   p.curToken.Type == lexer.STRING_DOUBLE {
-					value.WriteString(p.curToken.Literal)
+					// 对于字符串 token，需要保留引号以便 executor 正确处理
+					if p.curToken.Type == lexer.STRING_SINGLE {
+						value.WriteString("'")
+						value.WriteString(p.curToken.Literal)
+						value.WriteString("'")
+					} else if p.curToken.Type == lexer.STRING_DOUBLE {
+						value.WriteString("\"")
+						value.WriteString(p.curToken.Literal)
+						value.WriteString("\"")
+					} else {
+						value.WriteString(p.curToken.Literal)
+					}
 				} else if p.curToken.Type == lexer.IDENTIFIER {
 					value.WriteString(p.curToken.Literal)
 				} else if p.curToken.Type == lexer.NUMBER {

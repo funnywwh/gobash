@@ -288,14 +288,14 @@ func (s *Shell) ExecuteReader(reader io.Reader) error {
 			if err := s.executeLine(statement); err != nil {
 				// 检查是否是 exit 命令或脚本退出错误
 				if exitErr, ok := err.(*builtin.ExitError); ok {
-					// 返回 ExitError，让调用者决定如何处理
+					// 返回 ExitError，让调用者决定如何处理（不输出错误信息）
 					return exitErr
 				}
 				if scriptExitErr, ok := err.(*executor.ScriptExitError); ok {
-					// 返回 ScriptExitError，让调用者决定如何处理
+					// 返回 ScriptExitError，让调用者决定如何处理（不输出错误信息）
 					return scriptExitErr
 				}
-				// 输出错误信息到stderr，包含行号
+				// 输出错误信息到stderr，包含行号（只有非退出错误才输出）
 				fmt.Fprintf(os.Stderr, "gobash: 第%d行: %v\n", lineNum, err)
 				fmt.Fprintf(os.Stderr, "  %s\n", statement)
 				// 如果设置了set -e，遇到错误应该退出
@@ -322,13 +322,14 @@ func (s *Shell) ExecuteReader(reader io.Reader) error {
 		if err := s.executeLine(statement); err != nil {
 			// 检查是否是 exit 命令或脚本退出错误
 			if exitErr, ok := err.(*builtin.ExitError); ok {
-				// 返回 ExitError，让调用者决定如何处理
+				// 返回 ExitError，让调用者决定如何处理（不输出错误信息）
 				return exitErr
 			}
 			if scriptExitErr, ok := err.(*executor.ScriptExitError); ok {
-				// 返回 ScriptExitError，让调用者决定如何处理
+				// 返回 ScriptExitError，让调用者决定如何处理（不输出错误信息）
 				return scriptExitErr
 			}
+			// 输出错误信息到stderr，包含行号（只有非退出错误才输出）
 			fmt.Fprintf(os.Stderr, "gobash: 第%d行: %v\n", lineNum, err)
 			fmt.Fprintf(os.Stderr, "  %s\n", statement)
 			if s.options["e"] {

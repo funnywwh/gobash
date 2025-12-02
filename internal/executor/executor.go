@@ -40,6 +40,15 @@ func (e *ContinueLevelError) Error() string {
 	return fmt.Sprintf("continue %d", e.Level)
 }
 
+// ScriptExitError 表示脚本退出错误，包含退出码
+type ScriptExitError struct {
+	Code int
+}
+
+func (e *ScriptExitError) Error() string {
+	return fmt.Sprintf("script exit %d", e.Code)
+}
+
 // Executor 执行器
 // 负责解释执行AST，处理命令执行、管道、重定向、环境变量展开等功能
 type Executor struct {
@@ -147,24 +156,51 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 	}
 
 	// 检查是否是简单的变量赋值 VAR=value
-	if strings.Contains(cmdName, "=") && !strings.Contains(cmdName, "[") {
-		// 这是简单的变量赋值
-		parts := strings.SplitN(cmdName, "=", 2)
-		if len(parts) == 2 {
-			varName := strings.TrimSpace(parts[0])
-			varValue := strings.TrimSpace(parts[1])
-			// 移除引号（如果有）
-			if len(varValue) >= 2 {
-				if (varValue[0] == '"' && varValue[len(varValue)-1] == '"') ||
-				   (varValue[0] == '\'' && varValue[len(varValue)-1] == '\'') {
-					varValue = varValue[1 : len(varValue)-1]
+	// 注意：需要检查第一个 = 号，因为值中可能也包含 =（虽然不常见）
+	if strings.Contains(cmdName, "=") {
+		// 找到第一个 = 号的位置
+		eqIndex := strings.Index(cmdName, "=")
+		if eqIndex > 0 {
+			// 检查变量名部分是否包含 [（关联数组赋值 arr[key]=value）
+			varNamePart := strings.TrimSpace(cmdName[:eqIndex])
+			if !strings.Contains(varNamePart, "[") {
+				// 这是简单的变量赋值
+				varName := varNamePart
+				varValue := strings.TrimSpace(cmdName[eqIndex+1:])
+				
+				// 检查变量名是否有效（只包含字母、数字和下划线，且不能以数字开头）
+				if varName != "" {
+					isValidVarName := true
+					for i, ch := range varName {
+						if i == 0 {
+							if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_') {
+								isValidVarName = false
+								break
+							}
+						} else {
+							if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_') {
+								isValidVarName = false
+								break
+							}
+						}
+					}
+					
+					if isValidVarName {
+						// 移除引号（如果有）
+						if len(varValue) >= 2 {
+							if (varValue[0] == '"' && varValue[len(varValue)-1] == '"') ||
+							   (varValue[0] == '\'' && varValue[len(varValue)-1] == '\'') {
+								varValue = varValue[1 : len(varValue)-1]
+							}
+						}
+						// 展开变量值中的变量（单引号字符串中的变量不应该展开，但这里已经移除了引号）
+						varValue = e.expandVariablesInString(varValue)
+						// 设置环境变量
+						e.SetEnv(varName, varValue)
+						return nil
+					}
 				}
 			}
-			// 展开变量值中的变量
-			varValue = e.expandVariablesInString(varValue)
-			// 设置环境变量
-			e.SetEnv(varName, varValue)
-			return nil
 		}
 	}
 
@@ -200,6 +236,7 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 			result, err := e.evaluateDoubleBracketExpression(args)
 			if err != nil {
 				if e.options["e"] {
+					fmt.Fprintf(os.Stderr, "gobash: [[: %v\n", err)
 					os.Exit(1)
 				}
 				return err
@@ -207,6 +244,7 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 			if !result {
 				// 条件为假，返回退出码错误（ExitCode=1），这样while循环可以正确处理
 				if e.options["e"] {
+					fmt.Fprintf(os.Stderr, "gobash: [[: 条件为假\n")
 					os.Exit(1)
 				}
 				// 返回一个ExitError，退出码为1
@@ -229,8 +267,9 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 		}
 		
 		if err := testFunc(args, e.env); err != nil {
-			// 如果设置了 -e 选项且命令失败，立即退出
+			// 如果设置了 -e 选项且命令失败，输出错误信息后退出
 			if e.options["e"] {
+				fmt.Fprintf(os.Stderr, "gobash: test: %v\n", err)
 				os.Exit(1)
 			}
 			return err
@@ -264,8 +303,13 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 		// 处理内置命令的重定向
 		if len(cmd.Redirects) > 0 {
 			err := e.executeBuiltinWithRedirect(cmdName, builtinFunc, args, cmd.Redirects)
-			// 如果设置了 -e 选项且命令失败，立即退出
+			// 检查是否是 exit 命令，如果是，直接返回，不包装
+			if _, ok := err.(*builtin.ExitError); ok {
+				return err
+			}
+			// 如果设置了 -e 选项且命令失败，输出错误信息后退出
 			if err != nil && e.options["e"] {
+				fmt.Fprintf(os.Stderr, "gobash: %s: %v\n", cmdName, err)
 				os.Exit(1)
 			}
 			return err
@@ -277,8 +321,13 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 		}
 		
 		if err := builtinFunc(args, e.env); err != nil {
-			// 如果设置了 -e 选项且命令失败，立即退出
+			// 检查是否是 exit 命令，如果是，直接返回，不包装
+			if _, ok := err.(*builtin.ExitError); ok {
+				return err
+			}
+			// 如果设置了 -e 选项且命令失败，输出错误信息后退出
 			if e.options["e"] {
+				fmt.Fprintf(os.Stderr, "gobash: %s: %v\n", cmdName, err)
 				os.Exit(1)
 			}
 			return fmt.Errorf("%s: %v", cmdName, err)
@@ -323,8 +372,12 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 	
 	// 执行外部命令
 	err := e.executeExternalCommand(cmd)
-	// 如果设置了 -e 选项且命令失败，立即退出
+	// 如果设置了 -e 选项且命令失败，输出错误信息后退出
 	if err != nil && e.options["e"] {
+		// 输出错误信息到 stderr（如果还没有输出）
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "gobash: %v\n", err)
+		}
 		os.Exit(1)
 	}
 	return err
