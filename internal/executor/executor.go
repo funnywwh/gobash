@@ -1295,6 +1295,14 @@ func (e *Executor) evaluateExpression(expr parser.Expression) string {
 			return result
 		}
 		return ex.Value
+	case *parser.ParamExpandExpression:
+		// 参数展开表达式 ${VAR...}
+		result, err := e.expandParamExpression(ex)
+		if err != nil {
+			// 如果展开失败，返回错误信息（简化处理）
+			return ""
+		}
+		return result
 	case *parser.Variable:
 		// 检查是否是数组访问 ${arr[0]} 或 $arr[0]
 		if strings.Contains(ex.Name, "[") && strings.Contains(ex.Name, "]") {

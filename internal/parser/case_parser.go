@@ -83,8 +83,35 @@ func (p *Parser) parseCaseStatement() *CaseStatement {
 				break
 			}
 			
-			// 检查是否是结束符 ;;
-			if p.curToken.Type == lexer.SEMICOLON && p.peekToken.Type == lexer.SEMICOLON {
+			// 检查是否是结束符 ;; 或 ;& 或 ;;&
+			if p.curToken.Type == lexer.SEMI_SEMI {
+				p.nextToken() // 跳过 ;;
+				foundDoubleSemicolon = true
+				// 跳过 ;; 后的空白和换行
+				for p.curToken.Type == lexer.WHITESPACE || p.curToken.Type == lexer.NEWLINE {
+					p.nextToken()
+				}
+				break
+			} else if p.curToken.Type == lexer.SEMI_AND {
+				// ;& 表示 fallthrough
+				p.nextToken() // 跳过 ;&
+				foundDoubleSemicolon = true
+				// 跳过 ;& 后的空白和换行
+				for p.curToken.Type == lexer.WHITESPACE || p.curToken.Type == lexer.NEWLINE {
+					p.nextToken()
+				}
+				break
+			} else if p.curToken.Type == lexer.SEMI_SEMI_AND {
+				// ;;& 表示测试下一个模式
+				p.nextToken() // 跳过 ;;&
+				foundDoubleSemicolon = true
+				// 跳过 ;;& 后的空白和换行
+				for p.curToken.Type == lexer.WHITESPACE || p.curToken.Type == lexer.NEWLINE {
+					p.nextToken()
+				}
+				break
+			} else if p.curToken.Type == lexer.SEMICOLON && p.peekToken.Type == lexer.SEMICOLON {
+				// 兼容旧的 ;; 格式（两个独立的 SEMICOLON token）
 				p.nextToken() // 跳过第一个 ;
 				p.nextToken() // 跳过第二个 ;
 				foundDoubleSemicolon = true

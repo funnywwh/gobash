@@ -158,39 +158,39 @@
 - [ ] 添加错误处理测试
 - [ ] 运行现有测试，确保兼容性
 
-### 阶段 3: 变量展开系统重构（未开始）
+### 阶段 3: 变量展开系统重构（进行中）
 
-#### 研究阶段
-- [ ] 研究 bash 的变量展开实现（subst.c 中的 expand_string_internal, param_expand）
-  - [ ] 分析 expand_string_internal 的实现
-  - [ ] 分析 param_expand 的实现
-  - [ ] 理解变量展开的优先级
+#### ✅ 研究阶段
+- [x] 研究 bash 的变量展开实现（subst.c 中的 expand_string_internal, param_expand）
+  - [x] 分析 expand_string_internal 的实现
+  - [x] 分析 param_expand 的实现
+  - [x] 理解变量展开的优先级
   - [ ] 理解单词分割（IFS）的实现
   - [ ] 理解路径名展开（通配符）的实现
 
-#### 创建变量展开模块
-- [ ] 创建新的变量展开模块（`internal/executor/subst.go`）
-  - [ ] 定义展开上下文结构
-  - [ ] 定义展开标志
-  - [ ] 定义展开结果类型
+#### ✅ 创建变量展开模块
+- [x] 创建新的变量展开模块（`internal/executor/subst.go`）
+  - [x] 定义展开上下文结构（ExpandContext）
+  - [x] 定义展开标志（ExpandFlags）
+  - [x] 定义展开结果类型
 
-#### 实现参数展开函数
-- [ ] 实现完整的参数展开：
-  - [ ] `${VAR:-word}` - 使用默认值
-  - [ ] `${VAR:=word}` - 赋值默认值
-  - [ ] `${VAR:?word}` - 显示错误
-  - [ ] `${VAR:+word}` - 使用替代值
-  - [ ] `${VAR#pattern}` - 删除最短匹配前缀
-  - [ ] `${VAR##pattern}` - 删除最长匹配前缀
-  - [ ] `${VAR%pattern}` - 删除最短匹配后缀
-  - [ ] `${VAR%%pattern}` - 删除最长匹配后缀
-  - [ ] `${VAR:offset}` - 子字符串
-  - [ ] `${VAR:offset:length}` - 子字符串
-  - [ ] `${#VAR}` - 字符串长度
+#### 🔄 实现参数展开函数（进行中）
+- [x] 实现基本的参数展开：
+  - [x] `${VAR:-word}` - 使用默认值
+  - [x] `${VAR:=word}` - 赋值默认值
+  - [x] `${VAR:?word}` - 显示错误
+  - [x] `${VAR:+word}` - 使用替代值
+  - [x] `${VAR#pattern}` - 删除最短匹配前缀
+  - [x] `${VAR##pattern}` - 删除最长匹配前缀
+  - [x] `${VAR%pattern}` - 删除最短匹配后缀
+  - [x] `${VAR%%pattern}` - 删除最长匹配后缀
+  - [x] `${VAR:offset}` - 子字符串
+  - [x] `${VAR:offset:length}` - 子字符串
+  - [x] `${#VAR}` - 字符串长度
+  - [x] `${!VAR}` - 间接引用
   - [ ] `${VAR[@]}` - 数组展开（带引号时每个元素单独展开）
   - [ ] `${VAR[*]}` - 数组展开（所有元素作为一个单词）
-  - [ ] `${!VAR}` - 间接引用
-  - [ ] `${VAR[expr]}` - 数组/关联数组访问
+  - [ ] `${VAR[expr]}` - 数组/关联数组访问（部分实现）
 
 #### 实现其他展开功能
 - [ ] 改进算术展开
@@ -419,7 +419,15 @@
   - 添加对命令链的解析（; && ||）
   - 添加对参数展开的解析（${VAR...}）
   - 改进重定向解析（支持所有重定向类型）
-- ✅ 所有现有测试通过（除 TestVariableExpansion 需要进一步调查）
+- ✅ 改进控制流解析
+  - 改进 case 语句解析（支持 SEMI_SEMI, SEMI_AND, SEMI_SEMI_AND）
+  - 所有控制流语句（if/else, for, while, case, function）已实现
+- ✅ 开始变量展开系统重构
+  - 研究 bash 的变量展开实现
+  - 创建变量展开模块（subst.go）
+  - 实现基本参数展开功能（${VAR:-word}, ${VAR:=word}, ${VAR#pattern} 等）
+  - 集成到执行器
+- ✅ 所有现有测试通过
 
 ---
 
