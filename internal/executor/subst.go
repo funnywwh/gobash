@@ -4,6 +4,7 @@ package executor
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -375,6 +376,94 @@ func (e *Executor) wordSplit(text string) []string {
 	
 	// 默认情况：不分割
 	return []string{text}
+}
+
+// pathnameExpand 路径名展开（通配符）
+// 根据 bash 的行为：
+// 1. `*` 匹配任意数量的字符（除了 `/`）
+// 2. `?` 匹配单个字符（除了 `/`）
+// 3. `[...]` 匹配字符类
+// 4. `**` 递归匹配（如果启用，暂时不支持）
+// 5. 隐藏文件（以 `.` 开头）需要特殊处理
+func (e *Executor) pathnameExpand(pattern string) []string {
+	// 如果模式不包含通配符，直接返回
+	if !strings.ContainsAny(pattern, "*?[") {
+		return []string{pattern}
+	}
+	
+	// 使用 filepath.Glob 进行匹配
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		// 如果出错，返回原始模式
+		return []string{pattern}
+	}
+	
+	// 如果没有匹配，bash 的行为是返回原始模式
+	if len(matches) == 0 {
+		return []string{pattern}
+	}
+	
+	// 处理隐藏文件：如果模式不以 `.` 开头，不匹配隐藏文件
+	if !strings.HasPrefix(pattern, ".") {
+		filtered := []string{}
+		for _, match := range matches {
+			// 检查是否是隐藏文件
+			base := filepath.Base(match)
+			if !strings.HasPrefix(base, ".") {
+				filtered = append(filtered, match)
+			}
+		}
+		if len(filtered) > 0 {
+			return filtered
+		}
+		// 如果没有非隐藏文件匹配，返回原始模式
+		return []string{pattern}
+	}
+	
+	return matches
+}
+
+// expandPathnamePattern 展开路径名模式（支持字符类）
+// 这是一个辅助函数，用于将 bash 的字符类语法转换为 Go 的 glob 模式
+func expandPathnamePattern(pattern string) string {
+	// 将 bash 的字符类 `[...]` 转换为 Go 的 glob 模式
+	// Go 的 filepath.Match 支持 `[...]` 字符类，所以可以直接使用
+	// 但需要处理一些特殊情况：
+	// 1. `[!...]` 或 `[^...]` 表示否定字符类
+	// 2. `[...]` 中的 `-` 表示范围
+	
+	result := strings.Builder{}
+	i := 0
+	for i < len(pattern) {
+		if pattern[i] == '[' {
+			// 处理字符类
+			result.WriteByte('[')
+			i++
+			
+			// 检查是否是否定字符类
+			if i < len(pattern) && (pattern[i] == '!' || pattern[i] == '^') {
+				// Go 的 filepath.Match 不支持 `[!...]`，需要转换为 `[^...]`
+				result.WriteByte('^')
+				i++
+			}
+			
+			// 复制字符类内容
+			for i < len(pattern) && pattern[i] != ']' {
+				result.WriteByte(pattern[i])
+				i++
+			}
+			
+			if i < len(pattern) {
+				result.WriteByte(']')
+				i++
+			}
+		} else {
+			result.WriteByte(pattern[i])
+			i++
+		}
+	}
+	
+	return result.String()
 }
 
 // expandWord 展开 word（可能包含变量、命令替换等）
