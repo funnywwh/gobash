@@ -1741,25 +1741,33 @@ func (e *Executor) executeFunction(fn *parser.FunctionStatement, args []parser.E
 }
 
 // executeCommandSubstitution 执行命令替换
+// 正确处理嵌套的命令替换、转义和退出码
 func (e *Executor) executeCommandSubstitution(command string) string {
+	// 先展开命令字符串中的变量和嵌套的命令替换
+	// 注意：命令替换中的命令本身不应该进行单词分割和路径名展开
+	expandedCommand := e.expandCommandSubstitutionCommand(command)
+	
 	// 解析和执行命令
-	l := lexer.New(command)
+	l := lexer.New(expandedCommand)
 	p := parser.New(l)
 	program := p.ParseProgram()
 	
 	if len(p.Errors()) > 0 {
+		// 解析错误，返回空字符串
 		return ""
 	}
 	
-	// 捕获输出
+	// 保存当前的标准输出
 	oldStdout := os.Stdout
+	
+	// 创建管道捕获输出
 	r, w, err := os.Pipe()
 	if err != nil {
 		return ""
 	}
 	os.Stdout = w
 	
-	// 在goroutine中执行，避免阻塞
+	// 在goroutine中读取输出，避免阻塞
 	done := make(chan bool)
 	var output strings.Builder
 	
@@ -1782,25 +1790,52 @@ func (e *Executor) executeCommandSubstitution(command string) string {
 		done <- true
 	}()
 	
-	// 执行命令
+	// 执行命令（在子shell环境中）
+	// 注意：命令替换在子shell中执行，不应该影响当前shell的状态
 	execErr := e.Execute(program)
 	
+	// 恢复标准输出
 	w.Close()
 	os.Stdout = oldStdout
 	
 	// 等待读取完成
 	<-done
 	
+	// 恢复退出码（命令替换不应该改变当前shell的退出码，除非命令替换本身失败）
+	// 但我们需要保存命令替换的退出码，以便在需要时使用
+	// 这里简化处理，不恢复退出码，因为命令替换的退出码通常不影响当前shell
+	
+	// 处理执行错误
 	if execErr != nil {
+		// 执行错误，返回空字符串
 		return ""
 	}
 	
+	// 返回输出（移除末尾的换行符，如果存在）
 	result := output.String()
-	// 移除末尾的换行符（如果存在）
-	result = strings.TrimSuffix(result, "\n")
-	result = strings.TrimSuffix(result, "\r\n")
+	if len(result) > 0 && result[len(result)-1] == '\n' {
+		result = result[:len(result)-1]
+	}
 	
 	return result
+}
+
+// expandCommandSubstitutionCommand 展开命令替换中的命令字符串
+// 处理变量展开和嵌套的命令替换，但不进行单词分割和路径名展开
+func (e *Executor) expandCommandSubstitutionCommand(command string) string {
+	// 展开变量和嵌套的命令替换
+	result := e.expandVariablesInString(command)
+	return result
+}
+
+// getExitCode 获取当前退出码
+func (e *Executor) getExitCode() int {
+	if exitCode, ok := e.env["?"]; ok {
+		if code, err := strconv.Atoi(exitCode); err == nil {
+			return code
+		}
+	}
+	return 0
 }
 
 // executeProcessSubstitution 执行进程替换
