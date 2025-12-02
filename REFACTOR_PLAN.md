@@ -8,7 +8,18 @@
 
 ### ✅ 已完成的工作
 
-#### 1. 词法分析器改进（阶段 1 部分完成）
+#### 1. 词法分析器改进（阶段 1 基本完成）
+
+- ✅ **Here-document 支持**
+  - 在 lexer 中识别 `<<` 和 `<<-` token
+  - 在 AST 中添加 `HereDocument` 结构
+  - 在 parser 中解析 Here-document 分隔符（支持带引号和不带引号）
+  - 在执行器中实现 `readHereDocument()` 函数
+  - 支持带引号的分隔符（不展开变量）
+  - 支持制表符剥离（`<<-`）
+  - 添加其他重定向类型支持（`<&`, `>&`, `>|`, `<>`, `<<<`）
+
+#### 2. 语法分析器和执行器改进（阶段 1 扩展）
 
 - ✅ **Token 类型扩展** (`internal/lexer/token.go`)
   - 添加了新的重定向 token：`REDIRECT_HEREDOC`, `REDIRECT_HEREDOC_STRIP`, `REDIRECT_HEREDOC_TABS`, `REDIRECT_DUP_IN`, `REDIRECT_DUP_OUT`, `REDIRECT_CLOBBER`, `REDIRECT_RW`
@@ -40,13 +51,34 @@
 - [x] 改进引号处理（单引号、双引号、反引号、$'...', $"..."）
 - [x] 改进变量识别（支持所有参数展开形式）
 
-#### 🔄 进行中
-- [ ] 添加 Here-document 支持（<<EOF ... EOF）
-  - [ ] 实现 Here-document 标记识别
-  - [ ] 实现 Here-document 内容读取
-  - [ ] 处理 Here-document 的引号（带引号的标记不展开变量）
-  - [ ] 处理 Here-document 的制表符剥离（<<-）
-  - [ ] 测试 Here-document 功能
+#### ✅ 已完成
+- [x] 添加 Here-document 支持（<<EOF ... EOF）
+  - [x] 实现 Here-document 标记识别（在 lexer 中识别 << 和 <<-）
+  - [x] 在 AST 中添加 HereDocument 结构
+  - [x] 在 parser 中解析 Here-document 分隔符（支持带引号和不带引号）
+  - [x] 在执行器中实现 Here-document 内容读取（readHereDocument）
+  - [x] 处理 Here-document 的引号（带引号的标记不展开变量）
+  - [x] 处理 Here-document 的制表符剥离（<<-）
+  - [x] 添加其他重定向类型支持（<&, >&, >|, <>, <<<）
+  - [ ] 测试 Here-document 功能（待添加测试用例）
+
+- [x] 改进命令替换和算术展开嵌套处理
+  - [x] 改进 readCommandSubstitution 处理嵌套的 $(...)、引号、转义
+  - [x] 改进 readCommandSubstitutionParen 处理嵌套的命令替换
+  - [x] 改进 readArithmeticExpansion 处理嵌套的 $((...))
+  - [x] 添加嵌套处理测试用例
+
+- [x] 语法分析器 AST 扩展
+  - [x] 添加 ParamExpandExpression（参数展开表达式）
+  - [x] 添加 SubshellCommand（子shell命令）
+  - [x] 添加 GroupCommand（命令组）
+  - [x] 添加 CommandChain（命令链）
+
+- [x] 语法分析器 Parser 改进
+  - [x] 添加对复合命令的解析（subshell, group_command）
+  - [x] 添加对命令链的解析（; && ||）
+  - [x] 添加对参数展开的解析（${VAR...}）
+  - [x] 改进重定向解析（支持所有重定向类型）
 
 #### ⏳ 待开始
 - [ ] 改进空白字符和换行符处理
@@ -365,7 +397,26 @@
 - ✅ 完成重定向和操作符识别改进
 - ✅ 完成 $'...' 和 $"..." 支持
 - ✅ 完成参数展开识别改进
-- ✅ 所有现有测试通过
+- ✅ 完成 Here-document 基本支持
+  - 在 AST 中添加 HereDocument 结构
+  - 在 parser 中解析 Here-document
+  - 在执行器中实现内容读取
+  - 支持带引号分隔符和制表符剥离
+- ✅ 添加其他重定向类型支持（<&, >&, >|, <>, <<<）
+- ✅ 改进命令替换嵌套处理（正确处理嵌套的 $(...)、引号、转义等）
+- ✅ 改进算术展开嵌套处理（正确处理嵌套的 $((...))、引号等）
+- ✅ 添加嵌套处理测试用例
+- ✅ 完成语法分析器 AST 扩展
+  - 添加 ParamExpandExpression（参数展开表达式）
+  - 添加 SubshellCommand（子shell命令）
+  - 添加 GroupCommand（命令组）
+  - 添加 CommandChain（命令链）
+- ✅ 完成语法分析器 Parser 改进
+  - 添加对复合命令的解析（subshell, group_command）
+  - 添加对命令链的解析（; && ||）
+  - 添加对参数展开的解析（${VAR...}）
+  - 改进重定向解析（支持所有重定向类型）
+- ✅ 所有现有测试通过（除 TestVariableExpansion 需要进一步调查）
 
 ---
 
