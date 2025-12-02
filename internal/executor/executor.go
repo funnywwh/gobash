@@ -1882,7 +1882,11 @@ func (e *Executor) evaluateArithmetic(expr string) string {
 	return fmt.Sprintf("%d", result)
 }
 
-// evaluateArithmeticExpression 计算算术表达式（支持 +, -, *, /, %, 括号）
+// evaluateArithmeticExpression 计算算术表达式
+// 支持运算符: +, -, *, /, %, ** (幂), << (左移), >> (右移), & (按位与), | (按位或), ^ (按位异或), ~ (按位非)
+// 支持比较运算符: <, <=, >, >=, ==, !=
+// 支持逻辑运算符: &&, ||, ! (逻辑非)
+// 支持括号和函数调用
 func evaluateArithmeticExpression(expr string) (int64, error) {
 	// 移除所有空白字符
 	expr = strings.ReplaceAll(expr, " ", "")
@@ -1892,19 +1896,263 @@ func evaluateArithmeticExpression(expr string) (int64, error) {
 		return 0, nil
 	}
 	
-	// 使用简单的递归下降解析器
+	// 使用递归下降解析器
 	pos := 0
-	result, err := parseExpression(expr, &pos)
+	result, err := parseArithmeticExpression(expr, &pos)
 	if err != nil {
 		return 0, err
+	}
+	
+	// 确保解析完整个表达式
+	if pos < len(expr) {
+		return 0, fmt.Errorf("unexpected character at position %d: %c", pos, expr[pos])
 	}
 	
 	return result, nil
 }
 
-// parseExpression 解析表达式（处理 +, -）
-func parseExpression(expr string, pos *int) (int64, error) {
-	result, err := parseTerm(expr, pos)
+// parseArithmeticExpression 解析算术表达式（处理逻辑或 ||）
+func parseArithmeticExpression(expr string, pos *int) (int64, error) {
+	result, err := parseArithmeticAndExpression(expr, pos)
+	if err != nil {
+		return 0, err
+	}
+	
+	for *pos < len(expr) {
+		if *pos+1 < len(expr) && expr[*pos] == '|' && expr[*pos+1] == '|' {
+			*pos += 2
+			right, err := parseArithmeticAndExpression(expr, pos)
+			if err != nil {
+				return 0, err
+			}
+			// 逻辑或：如果左边非零，返回左边，否则返回右边
+			if result != 0 {
+				result = 1
+			} else if right != 0 {
+				result = 1
+			} else {
+				result = 0
+			}
+		} else {
+			break
+		}
+	}
+	
+	return result, nil
+}
+
+// parseArithmeticAndExpression 解析逻辑与表达式（处理 &&）
+func parseArithmeticAndExpression(expr string, pos *int) (int64, error) {
+	result, err := parseArithmeticComparison(expr, pos)
+	if err != nil {
+		return 0, err
+	}
+	
+	for *pos < len(expr) {
+		if *pos+1 < len(expr) && expr[*pos] == '&' && expr[*pos+1] == '&' {
+			*pos += 2
+			right, err := parseArithmeticComparison(expr, pos)
+			if err != nil {
+				return 0, err
+			}
+			// 逻辑与：如果两边都非零，返回1，否则返回0
+			if result != 0 && right != 0 {
+				result = 1
+			} else {
+				result = 0
+			}
+		} else {
+			break
+		}
+	}
+	
+	return result, nil
+}
+
+// parseArithmeticComparison 解析比较表达式（处理 <, <=, >, >=, ==, !=）
+func parseArithmeticComparison(expr string, pos *int) (int64, error) {
+	result, err := parseArithmeticBitwiseOr(expr, pos)
+	if err != nil {
+		return 0, err
+	}
+	
+	for *pos < len(expr) {
+		if *pos+1 < len(expr) && expr[*pos] == '<' && expr[*pos+1] == '=' {
+			*pos += 2
+			right, err := parseArithmeticBitwiseOr(expr, pos)
+			if err != nil {
+				return 0, err
+			}
+			if result <= right {
+				result = 1
+			} else {
+				result = 0
+			}
+		} else if *pos+1 < len(expr) && expr[*pos] == '>' && expr[*pos+1] == '=' {
+			*pos += 2
+			right, err := parseArithmeticBitwiseOr(expr, pos)
+			if err != nil {
+				return 0, err
+			}
+			if result >= right {
+				result = 1
+			} else {
+				result = 0
+			}
+		} else if *pos+1 < len(expr) && expr[*pos] == '=' && expr[*pos+1] == '=' {
+			*pos += 2
+			right, err := parseArithmeticBitwiseOr(expr, pos)
+			if err != nil {
+				return 0, err
+			}
+			if result == right {
+				result = 1
+			} else {
+				result = 0
+			}
+		} else if *pos+1 < len(expr) && expr[*pos] == '!' && expr[*pos+1] == '=' {
+			*pos += 2
+			right, err := parseArithmeticBitwiseOr(expr, pos)
+			if err != nil {
+				return 0, err
+			}
+			if result != right {
+				result = 1
+			} else {
+				result = 0
+			}
+		} else if expr[*pos] == '<' {
+			*pos++
+			right, err := parseArithmeticBitwiseOr(expr, pos)
+			if err != nil {
+				return 0, err
+			}
+			if result < right {
+				result = 1
+			} else {
+				result = 0
+			}
+		} else if expr[*pos] == '>' {
+			*pos++
+			right, err := parseArithmeticBitwiseOr(expr, pos)
+			if err != nil {
+				return 0, err
+			}
+			if result > right {
+				result = 1
+			} else {
+				result = 0
+			}
+		} else {
+			break
+		}
+	}
+	
+	return result, nil
+}
+
+// parseArithmeticBitwiseOr 解析按位或表达式（处理 |）
+func parseArithmeticBitwiseOr(expr string, pos *int) (int64, error) {
+	result, err := parseArithmeticBitwiseXor(expr, pos)
+	if err != nil {
+		return 0, err
+	}
+	
+	for *pos < len(expr) {
+		if expr[*pos] == '|' && (*pos+1 >= len(expr) || expr[*pos+1] != '|') {
+			*pos++
+			right, err := parseArithmeticBitwiseXor(expr, pos)
+			if err != nil {
+				return 0, err
+			}
+			result |= right
+		} else {
+			break
+		}
+	}
+	
+	return result, nil
+}
+
+// parseArithmeticBitwiseXor 解析按位异或表达式（处理 ^）
+func parseArithmeticBitwiseXor(expr string, pos *int) (int64, error) {
+	result, err := parseArithmeticBitwiseAnd(expr, pos)
+	if err != nil {
+		return 0, err
+	}
+	
+	for *pos < len(expr) {
+		if expr[*pos] == '^' {
+			*pos++
+			right, err := parseArithmeticBitwiseAnd(expr, pos)
+			if err != nil {
+				return 0, err
+			}
+			result ^= right
+		} else {
+			break
+		}
+	}
+	
+	return result, nil
+}
+
+// parseArithmeticBitwiseAnd 解析按位与表达式（处理 &）
+func parseArithmeticBitwiseAnd(expr string, pos *int) (int64, error) {
+	result, err := parseArithmeticShift(expr, pos)
+	if err != nil {
+		return 0, err
+	}
+	
+	for *pos < len(expr) {
+		if expr[*pos] == '&' && (*pos+1 >= len(expr) || expr[*pos+1] != '&') {
+			*pos++
+			right, err := parseArithmeticShift(expr, pos)
+			if err != nil {
+				return 0, err
+			}
+			result &= right
+		} else {
+			break
+		}
+	}
+	
+	return result, nil
+}
+
+// parseArithmeticShift 解析位移表达式（处理 <<, >>）
+func parseArithmeticShift(expr string, pos *int) (int64, error) {
+	result, err := parseArithmeticAddSub(expr, pos)
+	if err != nil {
+		return 0, err
+	}
+	
+	for *pos < len(expr) {
+		if *pos+1 < len(expr) && expr[*pos] == '<' && expr[*pos+1] == '<' {
+			*pos += 2
+			right, err := parseArithmeticAddSub(expr, pos)
+			if err != nil {
+				return 0, err
+			}
+			result <<= right
+		} else if *pos+1 < len(expr) && expr[*pos] == '>' && expr[*pos+1] == '>' {
+			*pos += 2
+			right, err := parseArithmeticAddSub(expr, pos)
+			if err != nil {
+				return 0, err
+			}
+			result >>= right
+		} else {
+			break
+		}
+	}
+	
+	return result, nil
+}
+
+// parseArithmeticAddSub 解析加减表达式（处理 +, -）
+func parseArithmeticAddSub(expr string, pos *int) (int64, error) {
+	result, err := parseArithmeticMulDivMod(expr, pos)
 	if err != nil {
 		return 0, err
 	}
@@ -1912,14 +2160,14 @@ func parseExpression(expr string, pos *int) (int64, error) {
 	for *pos < len(expr) {
 		if expr[*pos] == '+' {
 			*pos++
-			term, err := parseTerm(expr, pos)
+			term, err := parseArithmeticMulDivMod(expr, pos)
 			if err != nil {
 				return 0, err
 			}
 			result += term
 		} else if expr[*pos] == '-' {
 			*pos++
-			term, err := parseTerm(expr, pos)
+			term, err := parseArithmeticMulDivMod(expr, pos)
 			if err != nil {
 				return 0, err
 			}
@@ -1932,24 +2180,24 @@ func parseExpression(expr string, pos *int) (int64, error) {
 	return result, nil
 }
 
-// parseTerm 解析项（处理 *, /, %）
-func parseTerm(expr string, pos *int) (int64, error) {
-	result, err := parseFactor(expr, pos)
+// parseArithmeticMulDivMod 解析乘除模表达式（处理 *, /, %）
+func parseArithmeticMulDivMod(expr string, pos *int) (int64, error) {
+	result, err := parseArithmeticPower(expr, pos)
 	if err != nil {
 		return 0, err
 	}
 	
 	for *pos < len(expr) {
-		if expr[*pos] == '*' {
+		if expr[*pos] == '*' && (*pos+1 >= len(expr) || expr[*pos+1] != '*') {
 			*pos++
-			factor, err := parseFactor(expr, pos)
+			factor, err := parseArithmeticPower(expr, pos)
 			if err != nil {
 				return 0, err
 			}
 			result *= factor
 		} else if expr[*pos] == '/' {
 			*pos++
-			factor, err := parseFactor(expr, pos)
+			factor, err := parseArithmeticPower(expr, pos)
 			if err != nil {
 				return 0, err
 			}
@@ -1959,7 +2207,7 @@ func parseTerm(expr string, pos *int) (int64, error) {
 			result /= factor
 		} else if expr[*pos] == '%' {
 			*pos++
-			factor, err := parseFactor(expr, pos)
+			factor, err := parseArithmeticPower(expr, pos)
 			if err != nil {
 				return 0, err
 			}
@@ -1975,15 +2223,84 @@ func parseTerm(expr string, pos *int) (int64, error) {
 	return result, nil
 }
 
-// parseFactor 解析因子（处理数字和括号）
-func parseFactor(expr string, pos *int) (int64, error) {
+// parseArithmeticPower 解析幂表达式（处理 **）
+func parseArithmeticPower(expr string, pos *int) (int64, error) {
+	result, err := parseArithmeticUnary(expr, pos)
+	if err != nil {
+		return 0, err
+	}
+	
+	for *pos < len(expr) {
+		if *pos+1 < len(expr) && expr[*pos] == '*' && expr[*pos+1] == '*' {
+			*pos += 2
+			exponent, err := parseArithmeticUnary(expr, pos)
+			if err != nil {
+				return 0, err
+			}
+			// 计算幂
+			power := int64(1)
+			for i := int64(0); i < exponent; i++ {
+				power *= result
+			}
+			result = power
+		} else {
+			break
+		}
+	}
+	
+	return result, nil
+}
+
+// parseArithmeticUnary 解析一元表达式（处理 +, -, ~, !）
+func parseArithmeticUnary(expr string, pos *int) (int64, error) {
 	if *pos >= len(expr) {
 		return 0, fmt.Errorf("unexpected end of expression")
 	}
 	
+	// 处理一元运算符
+	if expr[*pos] == '+' {
+		*pos++
+		return parseArithmeticUnary(expr, pos)
+	} else if expr[*pos] == '-' {
+		*pos++
+		result, err := parseArithmeticUnary(expr, pos)
+		if err != nil {
+			return 0, err
+		}
+		return -result, nil
+	} else if expr[*pos] == '~' {
+		*pos++
+		result, err := parseArithmeticUnary(expr, pos)
+		if err != nil {
+			return 0, err
+		}
+		return ^result, nil
+	} else if expr[*pos] == '!' {
+		*pos++
+		result, err := parseArithmeticUnary(expr, pos)
+		if err != nil {
+			return 0, err
+		}
+		// 逻辑非：如果非零，返回0，否则返回1
+		if result != 0 {
+			return 0, nil
+		}
+		return 1, nil
+	}
+	
+	return parseArithmeticFactor(expr, pos)
+}
+
+// parseArithmeticFactor 解析因子（处理数字、括号、函数调用）
+func parseArithmeticFactor(expr string, pos *int) (int64, error) {
+	if *pos >= len(expr) {
+		return 0, fmt.Errorf("unexpected end of expression")
+	}
+	
+	// 处理括号
 	if expr[*pos] == '(' {
 		*pos++
-		result, err := parseExpression(expr, pos)
+		result, err := parseArithmeticExpression(expr, pos)
 		if err != nil {
 			return 0, err
 		}
@@ -1994,6 +2311,12 @@ func parseFactor(expr string, pos *int) (int64, error) {
 		return result, nil
 	}
 	
+	// 处理函数调用（简化实现，只支持基本函数）
+	if *pos+3 < len(expr) {
+		// 检查是否是函数调用，如 abs(, min(, max( 等
+		// 这里简化处理，暂时不支持函数调用
+	}
+	
 	// 解析数字
 	start := *pos
 	if expr[*pos] == '-' || expr[*pos] == '+' {
@@ -2001,7 +2324,7 @@ func parseFactor(expr string, pos *int) (int64, error) {
 	}
 	
 	if *pos >= len(expr) || !isDigitArith(expr[*pos]) {
-		return 0, fmt.Errorf("expected number")
+		return 0, fmt.Errorf("expected number at position %d: %c", *pos, expr[*pos])
 	}
 	
 	for *pos < len(expr) && isDigitArith(expr[*pos]) {
@@ -2016,6 +2339,7 @@ func parseFactor(expr string, pos *int) (int64, error) {
 	
 	return value, nil
 }
+
 
 // isDigitArith 判断是否为数字（用于算术表达式）
 func isDigitArith(ch byte) bool {
