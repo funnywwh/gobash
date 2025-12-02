@@ -2,6 +2,7 @@
 package lexer
 
 import (
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -77,6 +78,11 @@ func (l *Lexer) NextToken() Token {
 			ch := l.ch
 			l.readChar()
 			tok = Token{Type: OR, Literal: string(ch) + string(l.ch), Line: tok.Line, Column: tok.Column}
+		} else if l.peekChar() == '&' {
+			// |& 管道和stderr
+			ch := l.ch
+			l.readChar()
+			tok = Token{Type: BAR_AND, Literal: string(ch) + string(l.ch), Line: tok.Line, Column: tok.Column}
 		} else {
 			tok = newToken(PIPE, l.ch, tok.Line, tok.Column)
 		}
@@ -85,6 +91,18 @@ func (l *Lexer) NextToken() Token {
 			ch := l.ch
 			l.readChar()
 			tok = Token{Type: AND, Literal: string(ch) + string(l.ch), Line: tok.Line, Column: tok.Column}
+		} else if l.peekChar() == '>' {
+			// &> 或 &>>
+			ch := l.ch
+			l.readChar() // 跳过 &
+			if l.peekChar() == '>' {
+				// &>> 追加
+				l.readChar()
+				tok = Token{Type: AND_GREATER_GREATER, Literal: string(ch) + string(l.ch) + string(l.peekChar()), Line: tok.Line, Column: tok.Column}
+			} else {
+				// &> 覆盖
+				tok = Token{Type: AND_GREATER, Literal: string(ch) + string(l.ch), Line: tok.Line, Column: tok.Column}
+			}
 		} else {
 			tok = newToken(AMPERSAND, l.ch, tok.Line, tok.Column)
 		}
@@ -93,6 +111,16 @@ func (l *Lexer) NextToken() Token {
 			ch := l.ch
 			l.readChar()
 			tok = Token{Type: REDIRECT_APPEND, Literal: string(ch) + string(l.ch), Line: tok.Line, Column: tok.Column}
+		} else if l.peekChar() == '&' {
+			// >& 重定向
+			ch := l.ch
+			l.readChar()
+			tok = Token{Type: REDIRECT_DUP_OUT, Literal: string(ch) + string(l.ch), Line: tok.Line, Column: tok.Column}
+		} else if l.peekChar() == '|' {
+			// >| 强制覆盖
+			ch := l.ch
+			l.readChar()
+			tok = Token{Type: REDIRECT_CLOBBER, Literal: string(ch) + string(l.ch), Line: tok.Line, Column: tok.Column}
 		} else if l.peekChar() == '(' {
 			// 进程替换 >(command)
 			startLine := l.line
@@ -110,7 +138,34 @@ func (l *Lexer) NextToken() Token {
 			tok = newToken(REDIRECT_OUT, l.ch, tok.Line, tok.Column)
 		}
 	case '<':
-		if l.peekChar() == '(' {
+		if l.peekChar() == '<' {
+			// << 或 <<- 或 <<<
+			ch := l.ch
+			l.readChar() // 跳过第一个 <
+			peek2 := l.peekChar()
+			if peek2 == '-' {
+				// <<- Here-document with strip tabs
+				l.readChar() // 跳过 -
+				tok = Token{Type: REDIRECT_HEREDOC_STRIP, Literal: string(ch) + string(l.ch) + string(peek2), Line: tok.Line, Column: tok.Column}
+			} else if peek2 == '<' {
+				// <<< Here-string
+				l.readChar() // 跳过第二个 <
+				tok = Token{Type: REDIRECT_HEREDOC_TABS, Literal: string(ch) + string(l.ch) + string(peek2), Line: tok.Line, Column: tok.Column}
+			} else {
+				// << Here-document
+				tok = Token{Type: REDIRECT_HEREDOC, Literal: string(ch) + string(l.ch), Line: tok.Line, Column: tok.Column}
+			}
+		} else if l.peekChar() == '&' {
+			// <& 重定向
+			ch := l.ch
+			l.readChar()
+			tok = Token{Type: REDIRECT_DUP_IN, Literal: string(ch) + string(l.ch), Line: tok.Line, Column: tok.Column}
+		} else if l.peekChar() == '>' {
+			// <> 读写重定向
+			ch := l.ch
+			l.readChar()
+			tok = Token{Type: REDIRECT_RW, Literal: string(ch) + string(l.ch), Line: tok.Line, Column: tok.Column}
+		} else if l.peekChar() == '(' {
 			// 进程替换 <(command)
 			startLine := l.line
 			startColumn := l.column
@@ -124,7 +179,26 @@ func (l *Lexer) NextToken() Token {
 			tok = newToken(REDIRECT_IN, l.ch, tok.Line, tok.Column)
 		}
 	case ';':
-		tok = newToken(SEMICOLON, l.ch, tok.Line, tok.Column)
+		if l.peekChar() == ';' {
+			ch := l.ch
+			l.readChar()
+			peek2 := l.peekChar()
+			if peek2 == '&' {
+				// ;;& case 语句
+				l.readChar()
+				tok = Token{Type: SEMI_SEMI_AND, Literal: string(ch) + string(l.ch) + string(peek2), Line: tok.Line, Column: tok.Column}
+			} else {
+				// ;; case 语句
+				tok = Token{Type: SEMI_SEMI, Literal: string(ch) + string(l.ch), Line: tok.Line, Column: tok.Column}
+			}
+		} else if l.peekChar() == '&' {
+			// ;& case 语句
+			ch := l.ch
+			l.readChar()
+			tok = Token{Type: SEMI_AND, Literal: string(ch) + string(l.ch), Line: tok.Line, Column: tok.Column}
+		} else {
+			tok = newToken(SEMICOLON, l.ch, tok.Line, tok.Column)
+		}
 	case '(':
 		tok = newToken(LPAREN, l.ch, tok.Line, tok.Column)
 	case ')':
@@ -164,8 +238,29 @@ func (l *Lexer) NextToken() Token {
 	case '\\':
 		tok = newToken(ESCAPE, l.ch, tok.Line, tok.Column)
 	case '$':
-		// 检查是否是 $((expr)) 格式的算术展开
-		if l.peekChar() == '(' {
+		// 检查是否是 $'...' 或 $"..." 格式
+		peek1 := l.peekChar()
+		if peek1 == '\'' {
+			// $'...' ANSI-C 字符串
+			startLine := l.line
+			startColumn := l.column
+			l.readChar() // 跳过 $
+			l.readChar() // 跳过 '
+			tok = l.readDollarSingleQuote()
+			tok.Type = STRING_DOLLAR_SINGLE
+			tok.Line = startLine
+			tok.Column = startColumn
+		} else if peek1 == '"' {
+			// $"..." 国际化字符串
+			startLine := l.line
+			startColumn := l.column
+			l.readChar() // 跳过 $
+			l.readChar() // 跳过 "
+			tok = l.readDollarDoubleQuote()
+			tok.Type = STRING_DOLLAR_DOUBLE
+			tok.Line = startLine
+			tok.Column = startColumn
+		} else if peek1 == '(' {
 			peek2 := l.peekChar2()
 			if peek2 == '(' {
 				// $(( 算术展开
@@ -428,22 +523,75 @@ func (l *Lexer) readVariable() Token {
 	}
 
 	if l.ch == '{' {
-		// ${VAR} 格式
+		// ${VAR} 或 ${VAR...} 参数展开格式
 		l.readChar() // 跳过 {
 		position := l.position
-		for isLetter(l.ch) || isDigit(l.ch) || l.ch == '_' {
+		// 读取完整的参数展开表达式（包括所有操作符和值）
+		// 例如：${VAR:-default}, ${VAR#pattern}, ${VAR:offset:length} 等
+		depth := 1 // 括号深度
+		for depth > 0 && l.ch != 0 {
+			if l.ch == '{' {
+				depth++
+			} else if l.ch == '}' {
+				depth--
+				if depth == 0 {
+					// 找到匹配的 }
+					varExpr := l.input[position:l.position]
+					l.readChar() // 跳过 }
+					return Token{
+						Type:    PARAM_EXPAND,
+						Literal: varExpr,
+						Line:    startLine,
+						Column:  startColumn,
+					}
+				}
+			} else if l.ch == '\'' || l.ch == '"' {
+				// 跳过引号内的内容
+				quote := l.ch
+				l.readChar()
+				for l.ch != quote && l.ch != 0 {
+					if l.ch == '\\' && quote == '"' {
+						l.readChar() // 跳过转义字符
+					}
+					l.readChar()
+				}
+				if l.ch == quote {
+					l.readChar()
+				}
+				continue
+			} else if l.ch == '`' {
+				// 跳过命令替换
+				l.readChar()
+				for l.ch != '`' && l.ch != 0 {
+					if l.ch == '\\' {
+						l.readChar()
+					}
+					l.readChar()
+				}
+				if l.ch == '`' {
+					l.readChar()
+				}
+				continue
+			} else if l.ch == '$' && l.peekChar() == '(' {
+				// 跳过 $(command) 命令替换
+				l.readChar() // 跳过 $
+				l.readChar() // 跳过 (
+				cmdDepth := 1
+				for cmdDepth > 0 && l.ch != 0 {
+					if l.ch == '(' {
+						cmdDepth++
+					} else if l.ch == ')' {
+						cmdDepth--
+					} else if l.ch == '\\' {
+						l.readChar() // 跳过转义字符
+					}
+					l.readChar()
+				}
+				continue
+			}
 			l.readChar()
 		}
-		if l.ch == '}' {
-			varName := l.input[position:l.position]
-			l.readChar() // 跳过 }
-			return Token{
-				Type:    VAR,
-				Literal: varName,
-				Line:    startLine,
-				Column:  startColumn,
-			}
-		}
+		// 如果没有找到匹配的 }，返回错误
 		return Token{Type: ILLEGAL, Literal: "${", Line: startLine, Column: startColumn}
 	} else if isLetter(l.ch) || l.ch == '_' {
 		// $VAR 格式
@@ -676,6 +824,134 @@ func (l *Lexer) readCommandSubstitutionParen() Token {
 	}
 }
 
+// readDollarSingleQuote 读取 $'...' ANSI-C 字符串
+func (l *Lexer) readDollarSingleQuote() Token {
+	startLine := l.line
+	startColumn := l.column
+	var literal strings.Builder
+	
+	for l.ch != 0 {
+		if l.ch == '\'' {
+			// 找到结束引号
+			l.readChar() // 跳过结束引号
+			break
+		}
+		if l.ch == '\\' {
+			// 处理转义序列
+			l.readChar()
+			if l.ch != 0 {
+				// 处理 ANSI-C 转义序列
+				switch l.ch {
+				case 'a':
+					literal.WriteByte('\a')
+				case 'b':
+					literal.WriteByte('\b')
+				case 'f':
+					literal.WriteByte('\f')
+				case 'n':
+					literal.WriteByte('\n')
+				case 'r':
+					literal.WriteByte('\r')
+				case 't':
+					literal.WriteByte('\t')
+				case 'v':
+					literal.WriteByte('\v')
+				case '\\':
+					literal.WriteByte('\\')
+				case '\'':
+					literal.WriteByte('\'')
+				case 'x':
+					// \xHH 十六进制
+					l.readChar()
+					hex := ""
+					for isHexDigit(l.ch) && len(hex) < 2 {
+						hex += string(l.ch)
+						l.readChar()
+					}
+					if len(hex) > 0 {
+						if val, err := strconv.ParseUint(hex, 16, 8); err == nil {
+							literal.WriteByte(byte(val))
+						}
+					}
+					continue
+				case '0', '1', '2', '3', '4', '5', '6', '7':
+					// \0NNN 八进制
+					oct := string(l.ch)
+					l.readChar()
+					for isOctDigit(l.ch) && len(oct) < 3 {
+						oct += string(l.ch)
+						l.readChar()
+					}
+					if val, err := strconv.ParseUint(oct, 8, 8); err == nil {
+						literal.WriteByte(byte(val))
+					}
+					continue
+				default:
+					literal.WriteByte('\\')
+					literal.WriteByte(l.ch)
+				}
+				l.readChar()
+			}
+		} else {
+			literal.WriteByte(l.ch)
+			l.readChar()
+		}
+	}
+	
+	return Token{
+		Type:    STRING_DOLLAR_SINGLE,
+		Literal: literal.String(),
+		Line:    startLine,
+		Column:  startColumn,
+	}
+}
+
+// readDollarDoubleQuote 读取 $"..." 国际化字符串
+func (l *Lexer) readDollarDoubleQuote() Token {
+	startLine := l.line
+	startColumn := l.column
+	var literal strings.Builder
+	
+	for l.ch != 0 {
+		if l.ch == '"' {
+			// 找到结束引号
+			l.readChar() // 跳过结束引号
+			break
+		}
+		if l.ch == '\\' {
+			// 处理转义序列
+			l.readChar()
+			if l.ch != 0 {
+				switch l.ch {
+				case '"':
+					literal.WriteByte('"')
+				case '\\':
+					literal.WriteByte('\\')
+				case '$':
+					literal.WriteByte('$')
+				case '`':
+					literal.WriteByte('`')
+				default:
+					// 其他转义序列保持原样
+					literal.WriteByte('\\')
+					literal.WriteByte(l.ch)
+				}
+				l.readChar()
+			}
+		} else {
+			literal.WriteByte(l.ch)
+			l.readChar()
+		}
+	}
+	
+	return Token{
+		Type:    STRING_DOLLAR_DOUBLE,
+		Literal: literal.String(),
+		Line:    startLine,
+		Column:  startColumn,
+	}
+}
+
 // readProcessSubstitution 读取进程替换（<(command)或>(command)格式）
 func (l *Lexer) readProcessSubstitution() Token {
 	var literal strings.Builder
@@ -733,5 +1009,15 @@ func isLetter(ch byte) bool {
 // isDigit 判断是否为数字
 func isDigit(ch byte) bool {
 	return '0' <= ch && ch <= '9'
+}
+
+// isHexDigit 判断是否为十六进制数字
+func isHexDigit(ch byte) bool {
+	return ('0' <= ch && ch <= '9') || ('a' <= ch && ch <= 'f') || ('A' <= ch && ch <= 'F')
+}
+
+// isOctDigit 判断是否为八进制数字
+func isOctDigit(ch byte) bool {
+	return '0' <= ch && ch <= '7'
 }
 

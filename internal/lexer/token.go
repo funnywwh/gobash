@@ -22,11 +22,24 @@ const (
 	REDIRECT_OUT  // >
 	REDIRECT_IN   // <
 	REDIRECT_APPEND // >>
-	REDIRECT_FD   // 2>, 1>, etc.
+	REDIRECT_HEREDOC // <<
+	REDIRECT_HEREDOC_STRIP // <<-
+	REDIRECT_HEREDOC_TABS // <<<
+	REDIRECT_DUP_IN  // <&
+	REDIRECT_DUP_OUT // >&
+	REDIRECT_CLOBBER // >|
+	REDIRECT_RW      // <>
+	REDIRECT_FD      // 2>, 1>, etc.
 	AND           // &&
 	OR            // ||
 	SEMICOLON     // ;
+	SEMI_SEMI     // ;;
+	SEMI_AND      // ;&
+	SEMI_SEMI_AND // ;;&
 	AMPERSAND     // &
+	BAR_AND       // |&
+	AND_GREATER   // &>
+	AND_GREATER_GREATER // &>>
 
 	// 引号和转义
 	SINGLE_QUOTE // '
@@ -37,6 +50,9 @@ const (
 	// 变量
 	DOLLAR // $
 	VAR    // $VAR 或 ${VAR}
+	PARAM_EXPAND // ${VAR...} 参数展开（包含所有形式）
+	STRING_DOLLAR_SINGLE // $'...' ANSI-C 字符串
+	STRING_DOLLAR_DOUBLE // $"..." 国际化字符串
 	
 	// 命令替换
 	COMMAND_SUBSTITUTION // `command` 或 $(command)
@@ -78,6 +94,19 @@ const (
 	IN
 	SELECT
 	TIME
+	
+	// Here-document
+	HEREDOC_MARKER // Here-document 标记（如 EOF）
+	HEREDOC_CONTENT // Here-document 内容
+	
+	// 赋值
+	ASSIGNMENT_WORD // 赋值词（VAR=value）
+	
+	// 复合命令
+	SUBSHELL_START // ( 子shell开始
+	SUBSHELL_END   // ) 子shell结束
+	GROUP_START    // { 命令组开始
+	GROUP_END      // } 命令组结束
 )
 
 // Token 表示一个词法单元
@@ -117,13 +146,40 @@ func (t TokenType) String() string {
 		return "REDIRECT_IN"
 	case REDIRECT_APPEND:
 		return "REDIRECT_APPEND"
+	case REDIRECT_HEREDOC:
+		return "REDIRECT_HEREDOC"
+	case REDIRECT_HEREDOC_STRIP:
+		return "REDIRECT_HEREDOC_STRIP"
+	case REDIRECT_HEREDOC_TABS:
+		return "REDIRECT_HEREDOC_TABS"
+	case REDIRECT_DUP_IN:
+		return "REDIRECT_DUP_IN"
+	case REDIRECT_DUP_OUT:
+		return "REDIRECT_DUP_OUT"
+	case REDIRECT_CLOBBER:
+		return "REDIRECT_CLOBBER"
+	case REDIRECT_RW:
+		return "REDIRECT_RW"
 	case AND:
 		return "AND"
 	case OR:
 		return "OR"
 	case SEMICOLON:
 		return "SEMICOLON"
+	case SEMI_SEMI:
+		return "SEMI_SEMI"
+	case SEMI_AND:
+		return "SEMI_AND"
+	case SEMI_SEMI_AND:
+		return "SEMI_SEMI_AND"
 	case AMPERSAND:
+		return "AMPERSAND"
+	case BAR_AND:
+		return "BAR_AND"
+	case AND_GREATER:
+		return "AND_GREATER"
+	case AND_GREATER_GREATER:
+		return "AND_GREATER_GREATER"
 		return "AMPERSAND"
 	case SINGLE_QUOTE:
 		return "SINGLE_QUOTE"
@@ -137,6 +193,12 @@ func (t TokenType) String() string {
 		return "DOLLAR"
 	case VAR:
 		return "VAR"
+	case PARAM_EXPAND:
+		return "PARAM_EXPAND"
+	case STRING_DOLLAR_SINGLE:
+		return "STRING_DOLLAR_SINGLE"
+	case STRING_DOLLAR_DOUBLE:
+		return "STRING_DOLLAR_DOUBLE"
 	case LPAREN:
 		return "LPAREN"
 	case RPAREN:
@@ -177,6 +239,38 @@ func (t TokenType) String() string {
 		return "PROCESS_SUBSTITUTION_IN"
 	case PROCESS_SUBSTITUTION_OUT:
 		return "PROCESS_SUBSTITUTION_OUT"
+	case HEREDOC_MARKER:
+		return "HEREDOC_MARKER"
+	case HEREDOC_CONTENT:
+		return "HEREDOC_CONTENT"
+	case ASSIGNMENT_WORD:
+		return "ASSIGNMENT_WORD"
+	case SUBSHELL_START:
+		return "SUBSHELL_START"
+	case SUBSHELL_END:
+		return "SUBSHELL_END"
+	case GROUP_START:
+		return "GROUP_START"
+	case GROUP_END:
+		return "GROUP_END"
+	case LBRACKET:
+		return "LBRACKET"
+	case RBRACKET:
+		return "RBRACKET"
+	case DBL_LBRACKET:
+		return "DBL_LBRACKET"
+	case DBL_RBRACKET:
+		return "DBL_RBRACKET"
+	case CASE:
+		return "CASE"
+	case ESAC:
+		return "ESAC"
+	case IN:
+		return "IN"
+	case SELECT:
+		return "SELECT"
+	case TIME:
+		return "TIME"
 	default:
 		return "UNKNOWN"
 	}

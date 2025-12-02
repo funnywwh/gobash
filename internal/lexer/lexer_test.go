@@ -55,7 +55,7 @@ func TestNextToken(t *testing.T) {
 			input: "echo $((1 + 2))",
 			expected: []Token{
 				{Type: IDENTIFIER, Literal: "echo"},
-				{Type: ARITHMETIC_EXPANSION, Literal: "1 + 2)"}, // 注意：实际实现会包含一个右括号
+				{Type: ARITHMETIC_EXPANSION, Literal: "1 + 2"}, // 表达式部分不包含括号
 				{Type: EOF, Literal: ""},
 			},
 		},
