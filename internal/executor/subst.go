@@ -271,6 +271,112 @@ func (e *Executor) expandArray(arrName string, quoted bool) string {
 	return strings.Join(arr, separator)
 }
 
+// wordSplit 根据 IFS 分割单词
+// 根据 bash 的行为：
+// 1. 如果 IFS 未设置或为空，不进行分割（返回单个单词）
+// 2. 如果 IFS 包含空白字符（空格、制表符、换行符），连续的空白字符会被压缩为一个分隔符
+// 3. 如果 IFS 包含非空白字符，每个字符都是分隔符
+// 4. 如果 IFS 为空字符串（但已设置），不进行分割（每个字符都是独立的单词）
+func (e *Executor) wordSplit(text string) []string {
+	ifs := e.env["IFS"]
+	
+	// 如果 IFS 未设置，使用默认值
+	if ifs == "" {
+		// 检查是否是未设置（nil）还是空字符串
+		// 在 Go 中，如果 env["IFS"] 不存在，返回空字符串
+		// 我们需要检查 os.Getenv 来区分
+		if os.Getenv("IFS") == "" {
+			// IFS 未设置，使用默认值 " \t\n"
+			ifs = " \t\n"
+		} else {
+			// IFS 设置为空字符串，不进行分割
+			// 每个字符都是独立的单词
+			words := make([]string, 0, len(text))
+			for _, r := range text {
+				words = append(words, string(r))
+			}
+			return words
+		}
+	}
+	
+	// 检查 IFS 是否只包含空白字符
+	hasWhitespace := false
+	hasNonWhitespace := false
+	for _, r := range ifs {
+		if r == ' ' || r == '\t' || r == '\n' {
+			hasWhitespace = true
+		} else {
+			hasNonWhitespace = true
+		}
+	}
+	
+	if hasWhitespace && !hasNonWhitespace {
+		// IFS 只包含空白字符，压缩连续的空白字符
+		words := []string{}
+		currentWord := strings.Builder{}
+		inWhitespace := false
+		
+		for _, r := range text {
+			isWhitespace := r == ' ' || r == '\t' || r == '\n'
+			if isWhitespace {
+				if !inWhitespace && currentWord.Len() > 0 {
+					// 遇到空白字符，保存当前单词
+					words = append(words, currentWord.String())
+					currentWord.Reset()
+				}
+				inWhitespace = true
+			} else {
+				if inWhitespace {
+					inWhitespace = false
+				}
+				currentWord.WriteRune(r)
+			}
+		}
+		
+		// 添加最后一个单词（如果有）
+		if currentWord.Len() > 0 {
+			words = append(words, currentWord.String())
+		}
+		
+		return words
+	} else if hasNonWhitespace {
+		// IFS 包含非空白字符，每个字符都是分隔符
+		// 同时压缩连续的空白字符（如果 IFS 中也包含空白字符）
+		words := []string{}
+		currentWord := strings.Builder{}
+		
+		for _, r := range text {
+			isSeparator := false
+			for _, ifsRune := range ifs {
+				if r == ifsRune {
+					isSeparator = true
+					break
+				}
+			}
+			
+			if isSeparator {
+				// 遇到分隔符，保存当前单词
+				if currentWord.Len() > 0 {
+					words = append(words, currentWord.String())
+					currentWord.Reset()
+				}
+			} else {
+				currentWord.WriteRune(r)
+			}
+		}
+		
+		// 添加最后一个单词（如果有）
+		if currentWord.Len() > 0 {
+			words = append(words, currentWord.String())
+		}
+		
+		return words
+	}
+	
+	// 默认情况：不分割
+	return []string{text}
+}
+
 // expandWord 展开 word（可能包含变量、命令替换等）
 func (e *Executor) expandWord(word string) string {
 	// 简单的实现：展开变量
