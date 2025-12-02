@@ -236,6 +236,15 @@ func (l *Lexer) NextToken() Token {
 	case '`':
 		tok = l.readCommandSubstitution()
 	case '\\':
+		// 检查是否是行尾的反斜杠（转义的换行符）
+		peek := l.peekChar()
+		if peek == '\n' {
+			// 行尾的反斜杠，跳过反斜杠和换行符（多行命令）
+			l.readChar() // 跳过反斜杠
+			l.readChar() // 跳过换行符
+			// 继续读取下一个 token
+			return l.NextToken()
+		}
 		tok = newToken(ESCAPE, l.ch, tok.Line, tok.Column)
 	case '$':
 		// 检查是否是 $'...' 或 $"..." 格式
@@ -291,6 +300,7 @@ func (l *Lexer) NextToken() Token {
 		tok.Line = l.line
 		tok.Column = l.column
 	case '\n':
+		// 普通换行符（转义的换行符已经在反斜杠处理中被处理）
 		tok = newToken(NEWLINE, l.ch, tok.Line, tok.Column)
 	default:
 		if isLetter(l.ch) || l.ch == '_' {
@@ -666,8 +676,20 @@ func (l *Lexer) readString(quote byte) Token {
 					l.readChar() // 跳过 \
 					l.readChar() // 跳过 "
 					continue
+				} else if nextCh == '\n' {
+					// \n 转义为换行符，保留换行符但跳过反斜杠
+					literal.WriteByte('\n')
+					l.readChar() // 跳过 \
+					l.readChar() // 跳过 \n（readChar 会自动更新行号）
+					continue
+				} else if nextCh == '\\' {
+					// \\ 转义为单个反斜杠
+					literal.WriteByte('\\')
+					l.readChar() // 跳过第一个 \
+					l.readChar() // 跳过第二个 \
+					continue
 				} else {
-					// 其他转义序列保持原样（\$、\\、\n等）
+					// 其他转义序列保持原样（\$、\t等）
 					literal.WriteByte(l.ch) // 写入 \
 					l.readChar()
 					if l.ch != 0 && l.ch != quote {
@@ -684,7 +706,7 @@ func (l *Lexer) readString(quote byte) Token {
 			break
 		}
 		
-		// 普通字符
+		// 普通字符（包括空白字符，引号内的空白字符应该被保留）
 		literal.WriteByte(l.ch)
 		l.readChar()
 	}
@@ -1296,8 +1318,17 @@ func (l *Lexer) readProcessSubstitution() Token {
 }
 
 // skipWhitespace 跳过空白字符
+// 注意：不跳过换行符，因为换行符是重要的token（用于分隔命令）
 func (l *Lexer) skipWhitespace() {
 	for l.ch == ' ' || l.ch == '\t' || l.ch == '\r' {
+		l.readChar()
+	}
+}
+
+// skipWhitespaceAndNewline 跳过空白字符和换行符
+// 用于处理多行命令（行尾的反斜杠会忽略换行符）
+func (l *Lexer) skipWhitespaceAndNewline() {
+	for l.ch == ' ' || l.ch == '\t' || l.ch == '\r' || l.ch == '\n' {
 		l.readChar()
 	}
 }

@@ -199,6 +199,58 @@ func TestNestedCommandSubstitution(t *testing.T) {
 }
 
 // TestNestedArithmeticExpansion 测试嵌套的算术展开
+// TestEscapedNewline 测试转义的换行符处理
+func TestEscapedNewline(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected []Token
+	}{
+		{
+			// 多行命令：行尾的反斜杠应该忽略换行符
+			input: "echo hello \\\nworld",
+			expected: []Token{
+				{Type: IDENTIFIER, Literal: "echo"},
+				{Type: IDENTIFIER, Literal: "hello"},
+				{Type: IDENTIFIER, Literal: "world"},
+				{Type: EOF, Literal: ""},
+			},
+		},
+		{
+			// 普通换行符应该被识别为 NEWLINE
+			input: "echo hello\nworld",
+			expected: []Token{
+				{Type: IDENTIFIER, Literal: "echo"},
+				{Type: IDENTIFIER, Literal: "hello"},
+				{Type: NEWLINE, Literal: "\n"},
+				{Type: IDENTIFIER, Literal: "world"},
+				{Type: EOF, Literal: ""},
+			},
+		},
+		{
+			// 引号内的换行符应该被保留
+			input: "echo \"hello\nworld\"",
+			expected: []Token{
+				{Type: IDENTIFIER, Literal: "echo"},
+				{Type: STRING_DOUBLE, Literal: "hello\nworld"},
+				{Type: EOF, Literal: ""},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		l := New(tt.input)
+		for i, expected := range tt.expected {
+			tok := l.NextToken()
+			if tok.Type != expected.Type {
+				t.Errorf("测试 '%s' token %d: 类型错误，期望 %v，得到 %v", tt.input, i, expected.Type, tok.Type)
+			}
+			if tok.Literal != expected.Literal {
+				t.Errorf("测试 '%s' token %d: 字面量错误，期望 '%s'，得到 '%s'", tt.input, i, expected.Literal, tok.Literal)
+			}
+		}
+	}
+}
+
 func TestNestedArithmeticExpansion(t *testing.T) {
 	tests := []struct {
 		input    string
