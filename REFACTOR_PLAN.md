@@ -479,7 +479,16 @@
     - [x] 波浪号展开测试（TestTildeExpand）
     - [x] 集成测试（TestLexerParserIntegration, TestParserExecutorIntegration, TestVariableExpansionIntegration, TestEndToEndIntegration）
     - [x] 脚本测试（TestScriptParsing, TestScriptExecution）
-  - [ ] 添加兼容性测试（待完成，低优先级）
+  - [x] 添加兼容性测试（已完成）
+    - [x] 创建兼容性测试文件（compatibility_test.go）
+    - [x] 实现基本命令兼容性测试（TestCompatibilityBasicCommands）
+    - [x] 实现变量展开兼容性测试（TestCompatibilityVariableExpansion）
+    - [x] 实现算术展开兼容性测试（TestCompatibilityArithmeticExpansion）
+    - [x] 实现控制流兼容性测试（TestCompatibilityControlFlow）
+    - [x] 实现数组兼容性测试（TestCompatibilityArrays）
+    - [x] 实现重定向兼容性测试（TestCompatibilityRedirection）
+    - [x] 支持自动检测系统中的 bash 并比较输出
+    - [x] 即使没有 bash 也能运行测试验证 gobash 行为
   - [x] 添加性能测试（已完成）
     - [x] 创建基准测试文件（benchmark_test.go）
     - [x] 为关键函数添加基准测试
@@ -550,25 +559,32 @@
 - ✅ `readVariable()` - 读取变量（已改进）
 - ✅ `readDollarSingleQuote()` - 读取 $'...' 字符串（已实现）
 - ✅ `readDollarDoubleQuote()` - 读取 $"..." 字符串（已实现）
-- ⏳ `readHereDocument()` - 读取 Here-document（待实现）
-- ⏳ `readTokenWord()` - 读取单词 token（待实现）
+- ✅ `readHereDocument()` - 读取 Here-document（已实现，在 executor.go 中）
+- ✅ `readTokenWord()` - 读取单词 token（已实现，通过 NextToken() 和相关函数实现）
 
-#### 语法分析器（待实现）
+#### 语法分析器（已完成）
 
-- ⏳ `parseCommand()` - 解析命令
-- ⏳ `parseRedirect()` - 解析重定向（需要支持所有类型）
-- ⏳ `parseControlFlow()` - 解析控制流
-- ⏳ `parseCompoundCommand()` - 解析复合命令
-- ⏳ `parseParamExpand()` - 解析参数展开
+- ✅ `parseCommandStatement()` - 解析命令语句（已实现）
+- ✅ `parseCommandChain()` - 解析命令链（已实现）
+- ✅ `parseRedirect()` - 解析重定向（已实现，支持所有类型）
+- ✅ `parseIfStatement()` - 解析 if 语句（已实现）
+- ✅ `parseForStatement()` - 解析 for 循环（已实现）
+- ✅ `parseWhileStatement()` - 解析 while 循环（已实现）
+- ✅ `parseCaseStatement()` - 解析 case 语句（已实现）
+- ✅ `parseFunctionStatement()` - 解析函数定义（已实现）
+- ✅ `parseSubshell()` - 解析子shell命令（已实现）
+- ✅ `parseGroupCommand()` - 解析命令组（已实现）
+- ✅ `parseParamExpand()` - 解析参数展开（已实现）
 
-#### 变量展开系统（待实现）
+#### 变量展开系统（已完成）
 
-- ⏳ `expandStringInternal()` - 类似 bash 的 expand_string_internal
-- ⏳ `paramExpand()` - 类似 bash 的 param_expand
-- ⏳ `expandWord()` - 类似 bash 的 expand_word
-- ⏳ `wordSplit()` - 单词分割（IFS）
-- ⏳ `pathnameExpand()` - 路径名展开（通配符）
-- ⏳ `tildeExpand()` - 波浪号展开
+- ✅ `expandVariablesInString()` - 展开字符串中的变量（已实现，类似 bash 的 expand_string_internal）
+- ✅ `expandParamExpression()` - 展开参数表达式（已实现，类似 bash 的 param_expand）
+- ✅ `expandWord()` - 展开单词（已实现，类似 bash 的 expand_word）
+- ✅ `wordSplit()` - 单词分割（IFS）（已实现）
+- ✅ `pathnameExpand()` - 路径名展开（通配符）（已实现）
+- ✅ `pathnameExpandRecursive()` - 递归路径名展开（** 模式）（已实现）
+- ✅ `tildeExpand()` - 波浪号展开（已实现）
 
 ## 实施步骤
 
