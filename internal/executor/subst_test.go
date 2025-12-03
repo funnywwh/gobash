@@ -180,6 +180,9 @@ func TestTildeExpand(t *testing.T) {
 func TestExpandArray(t *testing.T) {
 	e := New()
 	
+	// 确保 IFS 使用默认值（空格、制表符、换行符）
+	e.env["IFS"] = " \t\n"
+	
 	// 设置测试数组
 	e.arrays["test"] = []string{"a", "b", "c"}
 	e.arrayTypes["test"] = "array"
