@@ -42,7 +42,7 @@
 
 ## 详细 TODO 列表
 
-### 阶段 1: 词法分析器重构（部分完成）
+### 阶段 1: 词法分析器重构（已完成）
 
 #### ✅ 已完成
 - [x] 研究 bash 的词法分析实现（read_token, read_token_word, shell_getc）
