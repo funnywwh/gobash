@@ -221,11 +221,24 @@
       - [x] 在 ILLEGAL token 生成时添加错误
       - [x] 添加 Errors() 和 HasErrors() 方法
       - [x] 添加错误处理测试用例（TestLexerErrorHandling）
-    - [ ] 改进执行器错误处理
-      - [ ] 统一错误类型和错误消息格式
-      - [ ] 添加错误上下文信息（命令、参数等）
-      - [ ] 改进错误传播机制
-      - [ ] 添加错误代码（退出码）
+    - [x] 改进执行器错误处理
+      - [x] 统一错误类型和错误消息格式（创建 ExecutionError 和 ExecutionErrorType）
+      - [x] 添加错误上下文信息（命令、参数等）
+      - [x] 改进错误传播机制（使用统一的 ExecutionError 类型）
+      - [x] 添加错误代码（退出码）
+      - [x] 实现错误类型分类：
+        - ExecutionErrorTypeCommandNotFound - 命令未找到
+        - ExecutionErrorTypeCommandFailed - 命令执行失败
+        - ExecutionErrorTypeRedirectError - 重定向错误
+        - ExecutionErrorTypePipeError - 管道错误
+        - ExecutionErrorTypeVariableError - 变量错误
+        - ExecutionErrorTypeArithmeticError - 算术错误
+        - ExecutionErrorTypeInvalidExpression - 无效表达式
+        - ExecutionErrorTypeInterrupted - 命令被中断
+        - ExecutionErrorTypeUnknownStatement - 未知语句类型
+      - [x] 在关键执行函数中使用统一的错误类型
+      - [x] 添加 ExitCode() 方法返回退出码
+      - [x] 添加错误处理测试用例（TestExecutionErrorHandling）
     - [ ] 改进 Shell 层的错误报告
       - [ ] 统一错误输出格式（参考 bash）
       - [ ] 添加文件名和行号信息
