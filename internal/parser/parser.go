@@ -305,7 +305,7 @@ func (p *Parser) parseStatement() Statement {
 					stmt.IndexedValues[indexStr] = valueExpr
 				} else {
 					// 普通数组元素（不带索引）
-					stmt.Values = append(stmt.Values, p.parseExpression())
+				stmt.Values = append(stmt.Values, p.parseExpression())
 				}
 				p.nextToken()
 			}

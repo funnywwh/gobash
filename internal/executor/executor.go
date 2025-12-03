@@ -5,6 +5,9 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"gobash/internal/builtin"
+	"gobash/internal/lexer"
+	"gobash/internal/parser"
 	"io"
 	"math/rand"
 	"os"
@@ -14,9 +17,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"gobash/internal/builtin"
-	"gobash/internal/lexer"
-	"gobash/internal/parser"
 )
 
 // BreakError 表示break语句
@@ -55,14 +55,14 @@ func (e *ScriptExitError) Error() string {
 // Executor 执行器
 // 负责解释执行AST，处理命令执行、管道、重定向、环境变量展开等功能
 type Executor struct {
-	env            map[string]string
-	arrays         map[string][]string            // 数组存储：数组名 -> 元素列表
-	assocArrays    map[string]map[string]string   // 关联数组存储：数组名 -> (键 -> 值)
-	arrayTypes     map[string]string              // 数组类型：数组名 -> "array" 或 "assoc"
-	builtins       map[string]builtin.BuiltinFunc
-	functions      map[string]*parser.FunctionStatement
-	options        map[string]bool // shell选项状态
-	jobs           *JobManager     // 作业管理器
+	env         map[string]string
+	arrays      map[string][]string          // 数组存储：数组名 -> 元素列表
+	assocArrays map[string]map[string]string // 关联数组存储：数组名 -> (键 -> 值)
+	arrayTypes  map[string]string            // 数组类型：数组名 -> "array" 或 "assoc"
+	builtins    map[string]builtin.BuiltinFunc
+	functions   map[string]*parser.FunctionStatement
+	options     map[string]bool // shell选项状态
+	jobs        *JobManager     // 作业管理器
 }
 
 // New 创建新的执行器
@@ -142,7 +142,7 @@ func (e *Executor) executeStatement(stmt parser.Statement) error {
 	case *parser.ContinueStatement:
 		return e.executeContinue(s)
 	default:
-		return newExecutionError(ExecutionErrorTypeUnknownStatement, 
+		return newExecutionError(ExecutionErrorTypeUnknownStatement,
 			fmt.Sprintf("unknown statement type: %T", stmt), "", nil, 0, "", nil)
 	}
 }
@@ -171,7 +171,7 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 				// 这是简单的变量赋值
 				varName := varNamePart
 				varValue := strings.TrimSpace(cmdName[eqIndex+1:])
-				
+
 				// 检查变量名是否有效（只包含字母、数字和下划线，且不能以数字开头）
 				if varName != "" {
 					isValidVarName := true
@@ -188,12 +188,12 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 							}
 						}
 					}
-					
+
 					if isValidVarName {
 						// 移除引号（如果有）
 						if len(varValue) >= 2 {
 							if (varValue[0] == '"' && varValue[len(varValue)-1] == '"') ||
-							   (varValue[0] == '\'' && varValue[len(varValue)-1] == '\'') {
+								(varValue[0] == '\'' && varValue[len(varValue)-1] == '\'') {
 								varValue = varValue[1 : len(varValue)-1]
 							}
 						}
@@ -226,7 +226,7 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 			}
 			args[i] = argValue
 		}
-		
+
 		// 移除结束括号（] 或 ]]）
 		if len(args) > 0 {
 			lastArg := args[len(args)-1]
@@ -234,7 +234,7 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 				args = args[:len(args)-1]
 			}
 		}
-		
+
 		// 对于 [[ 命令，需要支持 && 和 || 运算符
 		if cmdName == "[[" {
 			result, err := e.evaluateDoubleBracketExpression(args)
@@ -263,13 +263,13 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 			}
 			return nil
 		}
-		
+
 		// 对于 [ 命令，调用test命令
 		testFunc := e.builtins["test"]
 		if testFunc == nil {
 			return fmt.Errorf("test命令未找到")
 		}
-		
+
 		if err := testFunc(args, e.env); err != nil {
 			// 如果设置了 -e 选项且命令失败，输出错误信息后退出
 			if e.options["e"] {
@@ -278,10 +278,10 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 			}
 			return err
 		}
-		
+
 		return nil
 	}
-	
+
 	// 检查是否为内置命令
 	if builtinFunc, ok := e.builtins[cmdName]; ok {
 		args := make([]string, len(cmd.Args))
@@ -294,7 +294,7 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 			}
 			args[i] = argValue
 		}
-		
+
 		// 如果设置了 -x 选项，显示执行的命令
 		if e.options["x"] {
 			fmt.Fprintf(os.Stderr, "+ %s", cmdName)
@@ -303,7 +303,7 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 			}
 			fmt.Fprintf(os.Stderr, "\n")
 		}
-		
+
 		// 处理内置命令的重定向
 		if len(cmd.Redirects) > 0 {
 			err := e.executeBuiltinWithRedirect(cmdName, builtinFunc, args, cmd.Redirects)
@@ -318,12 +318,12 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 			}
 			return err
 		}
-		
+
 		// 为需要访问JobManager的命令设置引用
 		if cmdName == "jobs" || cmdName == "fg" || cmdName == "bg" {
 			builtin.SetJobManager(e.jobs)
 		}
-		
+
 		if err := builtinFunc(args, e.env); err != nil {
 			// 检查是否是 exit 命令，如果是，直接返回，不包装
 			if _, ok := err.(*builtin.ExitError); ok {
@@ -336,7 +336,7 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 			}
 			return fmt.Errorf("%s: %v", cmdName, err)
 		}
-		
+
 		// 处理declare命令的特殊情况
 		if cmdName == "declare" {
 			// 检查是否声明了关联数组
@@ -354,7 +354,7 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 				delete(e.env, "__WBASH_DECLARE_VAR__")
 			}
 		}
-		
+
 		return nil
 	}
 
@@ -373,7 +373,7 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 		}
 		fmt.Fprintf(os.Stderr, "\n")
 	}
-	
+
 	// 执行外部命令
 	err := e.executeExternalCommand(cmd)
 	// 如果设置了 -e 选项且命令失败，输出错误信息后退出
@@ -392,7 +392,7 @@ func (e *Executor) executeBuiltinWithRedirect(cmdName string, builtinFunc builti
 	// 保存原始的stdout和stderr
 	oldStdout := os.Stdout
 	oldStderr := os.Stderr
-	
+
 	// 处理重定向
 	var files []*os.File
 	defer func() {
@@ -404,13 +404,13 @@ func (e *Executor) executeBuiltinWithRedirect(cmdName string, builtinFunc builti
 			f.Close()
 		}
 	}()
-	
+
 	for _, redirect := range redirects {
 		target := e.evaluateExpression(redirect.Target)
 		if target == "" {
 			return fmt.Errorf("redirect target is empty")
 		}
-		
+
 		switch redirect.Type {
 		case parser.REDIRECT_OUTPUT:
 			file, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
@@ -443,12 +443,12 @@ func (e *Executor) executeBuiltinWithRedirect(cmdName string, builtinFunc builti
 			os.Stdin = file
 		}
 	}
-	
+
 	// 执行内置命令
 	if err := builtinFunc(args, e.env); err != nil {
 		return fmt.Errorf("%s: %v", cmdName, err)
 	}
-	
+
 	return nil
 }
 
@@ -466,7 +466,7 @@ func (e *Executor) executeExternalCommand(cmd *parser.CommandStatement) error {
 		// 检查未定义的变量（set -u）
 		if strings.HasPrefix(argValue, "__UNDEFINED_VAR__") {
 			varName := strings.TrimPrefix(argValue, "__UNDEFINED_VAR__")
-			return newExecutionError(ExecutionErrorTypeVariableError, 
+			return newExecutionError(ExecutionErrorTypeVariableError,
 				fmt.Sprintf("未定义的变量: %s", varName), cmdName, args[:i], 0, "", nil)
 		}
 		args[i] = argValue
@@ -478,7 +478,7 @@ func (e *Executor) executeExternalCommand(cmd *parser.CommandStatement) error {
 
 	// 处理重定向
 	if err := e.setupRedirects(execCmd, cmd.Redirects); err != nil {
-		return newExecutionError(ExecutionErrorTypeRedirectError, 
+		return newExecutionError(ExecutionErrorTypeRedirectError,
 			"重定向错误", cmdName, args, 0, "", err)
 	}
 
@@ -504,10 +504,10 @@ func (e *Executor) executeExternalCommand(cmd *parser.CommandStatement) error {
 			// 检查是否是命令未找到
 			if _, ok := err.(*exec.ExitError); !ok {
 				// 通常是 "executable file not found" 错误
-				return newExecutionError(ExecutionErrorTypeCommandNotFound, 
+				return newExecutionError(ExecutionErrorTypeCommandNotFound,
 					"无法启动命令", cmdName, args, 0, "", err)
 			}
-			return newExecutionError(ExecutionErrorTypeCommandFailed, 
+			return newExecutionError(ExecutionErrorTypeCommandFailed,
 				"无法启动命令", cmdName, args, 0, "", err)
 		}
 		// 构建命令字符串用于显示
@@ -526,10 +526,10 @@ func (e *Executor) executeExternalCommand(cmd *parser.CommandStatement) error {
 		// 检查是否是命令未找到
 		if _, ok := err.(*exec.ExitError); !ok {
 			// 通常是 "executable file not found" 错误
-			return newExecutionError(ExecutionErrorTypeCommandNotFound, 
+			return newExecutionError(ExecutionErrorTypeCommandNotFound,
 				"无法启动命令", cmdName, args, 0, "", err)
 		}
-		return newExecutionError(ExecutionErrorTypeCommandFailed, 
+		return newExecutionError(ExecutionErrorTypeCommandFailed,
 			"无法启动命令", cmdName, args, 0, "", err)
 	}
 
@@ -538,7 +538,7 @@ func (e *Executor) executeExternalCommand(cmd *parser.CommandStatement) error {
 	// syscall.SIGTERM 在 Unix 系统上可用，Windows 上会被 signal.Notify 自动忽略
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	
+
 	// 使用 goroutine 等待命令完成
 	done := make(chan error, 1)
 	go func() {
@@ -558,11 +558,11 @@ func (e *Executor) executeExternalCommand(cmd *parser.CommandStatement) error {
 				if exitErr.ProcessState != nil {
 					exitCode = exitErr.ProcessState.ExitCode()
 				}
-				return newExecutionError(ExecutionErrorTypeCommandFailed, 
+				return newExecutionError(ExecutionErrorTypeCommandFailed,
 					"命令执行失败", cmdName, args, exitCode, "", err)
 			}
 			// 命令未找到或无法执行
-			return newExecutionError(ExecutionErrorTypeCommandNotFound, 
+			return newExecutionError(ExecutionErrorTypeCommandNotFound,
 				"命令未找到或无法执行", cmdName, args, 0, "", err)
 		}
 		return nil
@@ -679,7 +679,7 @@ func (e *Executor) executePipe(left, right *parser.CommandStatement) error {
 					exitCode = exitErr.ProcessState.ExitCode()
 				}
 			}
-			return newExecutionError(ExecutionErrorTypePipeError, 
+			return newExecutionError(ExecutionErrorTypePipeError,
 				"等待右侧命令完成失败", rightCmdName, nil, exitCode, "", err)
 		}
 		return nil
@@ -887,7 +887,7 @@ func (e *Executor) executeFor(stmt *parser.ForStatement) error {
 				// 成功解析参数个数
 			}
 		}
-		
+
 		// 如果没有参数个数信息，尝试从$@获取
 		if argCount == 0 {
 			if allArgs, ok := e.env["@"]; ok && allArgs != "" {
@@ -896,7 +896,7 @@ func (e *Executor) executeFor(stmt *parser.ForStatement) error {
 				argCount = len(args)
 			}
 		}
-		
+
 		// 遍历位置参数
 		for i := 1; i <= argCount; i++ {
 			key := fmt.Sprintf("%d", i)
@@ -974,7 +974,7 @@ func (e *Executor) executeWhile(stmt *parser.WhileStatement) error {
 	originalSetE := e.options["e"]
 	// 在 while 循环条件中，临时禁用 set -e（bash 的行为）
 	e.options["e"] = false
-	
+
 	for {
 		// 执行条件命令，检查退出码
 		// 如果命令返回错误（非零退出码），条件为假，退出循环
@@ -1086,7 +1086,7 @@ func (e *Executor) executeArrayAssignment(stmt *parser.ArrayAssignmentStatement)
 		maxIndex := -1
 		indexedMap := make(map[int]string)
 		hasStringKeys := false
-		
+
 		for indexStr, valueExpr := range stmt.IndexedValues {
 			// 索引字符串可能是数字字符串或变量名
 			// 先尝试直接解析为数字
@@ -1117,7 +1117,7 @@ func (e *Executor) executeArrayAssignment(stmt *parser.ArrayAssignmentStatement)
 				}
 				continue
 			}
-			
+
 			// 数字索引
 			if index > maxIndex {
 				maxIndex = index
@@ -1125,7 +1125,7 @@ func (e *Executor) executeArrayAssignment(stmt *parser.ArrayAssignmentStatement)
 			value := e.evaluateExpression(valueExpr)
 			indexedMap[index] = value
 		}
-		
+
 		// 如果是数字索引，创建普通数组
 		if !hasStringKeys && maxIndex >= 0 {
 			values := make([]string, maxIndex+1)
@@ -1152,7 +1152,7 @@ func (e *Executor) executeArrayAssignment(stmt *parser.ArrayAssignmentStatement)
 		}
 		return nil
 	}
-	
+
 	// 普通数组赋值 arr=(1 2 3)
 	values := make([]string, 0, len(stmt.Values))
 	for _, expr := range stmt.Values {
@@ -1174,7 +1174,7 @@ func (e *Executor) executeArrayAssignment(stmt *parser.ArrayAssignmentStatement)
 func (e *Executor) executeCaseStatement(stmt *parser.CaseStatement) error {
 	// 求值case的值
 	value := e.evaluateExpression(stmt.Value)
-	
+
 	// 遍历所有case子句
 	for _, caseClause := range stmt.Cases {
 		// 检查是否匹配
@@ -1193,13 +1193,13 @@ func (e *Executor) executeCaseStatement(stmt *parser.CaseStatement) error {
 				break
 			}
 		}
-		
+
 		if matched {
 			// 执行匹配的case体
 			return e.executeBlock(caseClause.Body)
 		}
 	}
-	
+
 	// 没有匹配的case，不执行任何操作
 	return nil
 }
@@ -1210,11 +1210,11 @@ func matchPattern(value, pattern string) bool {
 	if pattern == "*" {
 		return true
 	}
-	
+
 	// 简单的通配符匹配
 	patternIdx := 0
 	valueIdx := 0
-	
+
 	for patternIdx < len(pattern) && valueIdx < len(value) {
 		if pattern[patternIdx] == '*' {
 			// * 匹配任意字符序列
@@ -1240,7 +1240,7 @@ func matchPattern(value, pattern string) bool {
 			return false
 		}
 	}
-	
+
 	// 如果都匹配完了，返回true
 	return patternIdx == len(pattern) && valueIdx == len(value)
 }
@@ -1261,7 +1261,7 @@ func (e *Executor) getArrayElement(varExpr string) string {
 		return ""
 	}
 	indexStr := varExpr[idx+1 : idxEnd]
-	
+
 	// 检查是否是关联数组
 	if arrayType, ok := e.arrayTypes[arrName]; ok && arrayType == "assoc" {
 		// 关联数组：使用字符串键
@@ -1276,7 +1276,7 @@ func (e *Executor) getArrayElement(varExpr string) string {
 		key := e.expandVariablesInString(indexStr)
 		return assocArr[key]
 	}
-	
+
 	// 普通数组：尝试解析为数字索引
 	index, err := strconv.Atoi(indexStr)
 	if err != nil {
@@ -1287,7 +1287,7 @@ func (e *Executor) getArrayElement(varExpr string) string {
 		}
 		return ""
 	}
-	
+
 	// 获取普通数组
 	arr, ok := e.arrays[arrName]
 	if !ok {
@@ -1297,12 +1297,12 @@ func (e *Executor) getArrayElement(varExpr string) string {
 		}
 		return ""
 	}
-	
+
 	// 检查索引范围
 	if index < 0 || index >= len(arr) {
 		return ""
 	}
-	
+
 	return arr[index]
 }
 
@@ -1339,13 +1339,13 @@ func (e *Executor) expandArray(arrName string, quoted bool) string {
 		}
 		return strings.Join(values, separator)
 	}
-	
+
 	// 普通数组
 	arr, ok := e.arrays[arrName]
 	if !ok {
 		return ""
 	}
-	
+
 	if quoted {
 		// ${arr[@]} - 每个元素作为单独的词
 		return strings.Join(arr, " ")
@@ -1373,10 +1373,10 @@ func (e *Executor) executeAssocArrayAssignment(assignment string, args []parser.
 	if eqIdx == -1 {
 		return fmt.Errorf("无效的赋值语句: %s", assignment)
 	}
-	
+
 	leftSide := assignment[:eqIdx]
 	rightSide := assignment[eqIdx+1:]
-	
+
 	// 解析 arr[key]
 	idx := strings.Index(leftSide, "[")
 	if idx == -1 {
@@ -1388,13 +1388,13 @@ func (e *Executor) executeAssocArrayAssignment(assignment string, args []parser.
 		return fmt.Errorf("无效的数组赋值: %s", assignment)
 	}
 	keyStr := leftSide[idx+1 : idxEnd]
-	
+
 	// 获取值（如果有参数，使用第一个参数；否则使用rightSide）
 	value := rightSide
 	if len(args) > 0 {
 		value = e.evaluateExpression(args[0])
 	}
-	
+
 	// 检查是否是关联数组
 	if arrayType, ok := e.arrayTypes[arrName]; ok && arrayType == "assoc" {
 		// 确保关联数组已初始化
@@ -1406,7 +1406,7 @@ func (e *Executor) executeAssocArrayAssignment(assignment string, args []parser.
 		e.assocArrays[arrName][key] = value
 		return nil
 	}
-	
+
 	// 如果不是关联数组，尝试作为普通数组处理（数字索引）
 	index, err := strconv.Atoi(keyStr)
 	if err == nil {
@@ -1424,7 +1424,7 @@ func (e *Executor) executeAssocArrayAssignment(assignment string, args []parser.
 		e.arrayTypes[arrName] = "array"
 		return nil
 	}
-	
+
 	// 既不是关联数组也不是数字索引，创建关联数组
 	if e.assocArrays[arrName] == nil {
 		e.assocArrays[arrName] = make(map[string]string)
@@ -1572,14 +1572,14 @@ func (e *Executor) expandVariablesInString(s string) string {
 	if len(s) == 0 {
 		return ""
 	}
-	
+
 	var result strings.Builder
 	i := 0
 	for i < len(s) {
 		// 处理转义序列（除了 \$，\$ 留给变量展开处理）
 		if s[i] == '\\' && i+1 < len(s) {
 			escaped := s[i+1]
-			
+
 			if escaped == '$' {
 				// \$ 转义：保留 \，然后继续处理 $（会在下面的 $ 处理中检查前面是否有 \）
 				result.WriteByte('\\')
@@ -1604,7 +1604,7 @@ func (e *Executor) expandVariablesInString(s string) string {
 			// 检查是否是算术展开 $((...))
 			if i+2 < len(s) && s[i+1] == '(' && s[i+2] == '(' {
 				// 找到匹配的 ))
-				i += 3 // 跳过 $(( 
+				i += 3 // 跳过 $((
 				startPos := i
 				depth := 1
 				for i < len(s) && depth > 0 {
@@ -1634,7 +1634,7 @@ func (e *Executor) expandVariablesInString(s string) string {
 				}
 				continue
 			}
-			
+
 			// 检查 result 中最后一个字符是否是转义的 \
 			if result.Len() > 0 {
 				resultStr := result.String()
@@ -1681,11 +1681,11 @@ func (e *Executor) expandVariablesInString(s string) string {
 					continue
 				}
 			}
-			
+
 			// 前面没有 \，正常展开变量
 			// 处理变量展开
 			var varName strings.Builder
-			
+
 			// 处理特殊变量 $#, $@, $*, $?, $!, $$, $0, $1, $2, ...
 			if i+1 < len(s) && s[i+1] == '#' {
 				// $# 参数个数
@@ -1757,7 +1757,7 @@ func (e *Executor) expandVariablesInString(s string) string {
 				}
 				continue
 			}
-			
+
 			if i+1 < len(s) && s[i+1] == '{' {
 				// ${VAR} 或 ${arr[0]} 格式
 				i += 2
@@ -1915,31 +1915,31 @@ func (e *Executor) executeCommandSubstitution(command string) string {
 	// 先展开命令字符串中的变量和嵌套的命令替换
 	// 注意：命令替换中的命令本身不应该进行单词分割和路径名展开
 	expandedCommand := e.expandCommandSubstitutionCommand(command)
-	
+
 	// 解析和执行命令
 	l := lexer.New(expandedCommand)
 	p := parser.New(l)
 	program := p.ParseProgram()
-	
+
 	if len(p.Errors()) > 0 {
 		// 解析错误，返回空字符串
 		return ""
 	}
-	
+
 	// 保存当前的标准输出
 	oldStdout := os.Stdout
-	
+
 	// 创建管道捕获输出
 	r, w, err := os.Pipe()
 	if err != nil {
 		return ""
 	}
 	os.Stdout = w
-	
+
 	// 在goroutine中读取输出，避免阻塞
 	done := make(chan bool)
 	var output strings.Builder
-	
+
 	go func() {
 		// 读取输出
 		buf := make([]byte, 1024)
@@ -1958,34 +1958,34 @@ func (e *Executor) executeCommandSubstitution(command string) string {
 		r.Close()
 		done <- true
 	}()
-	
+
 	// 执行命令（在子shell环境中）
 	// 注意：命令替换在子shell中执行，不应该影响当前shell的状态
 	execErr := e.Execute(program)
-	
+
 	// 恢复标准输出
 	w.Close()
 	os.Stdout = oldStdout
-	
+
 	// 等待读取完成
 	<-done
-	
+
 	// 恢复退出码（命令替换不应该改变当前shell的退出码，除非命令替换本身失败）
 	// 但我们需要保存命令替换的退出码，以便在需要时使用
 	// 这里简化处理，不恢复退出码，因为命令替换的退出码通常不影响当前shell
-	
+
 	// 处理执行错误
 	if execErr != nil {
 		// 执行错误，返回空字符串
 		return ""
 	}
-	
+
 	// 返回输出（移除末尾的换行符，如果存在）
 	result := output.String()
 	if len(result) > 0 && result[len(result)-1] == '\n' {
 		result = result[:len(result)-1]
 	}
-	
+
 	return result
 }
 
@@ -2017,17 +2017,17 @@ func (e *Executor) executeProcessSubstitution(command string, isInput bool) stri
 	}
 	tmpPath := tmpFile.Name()
 	tmpFile.Close()
-	
+
 	// 解析和执行命令
 	l := lexer.New(command)
 	p := parser.New(l)
 	program := p.ParseProgram()
-	
+
 	if len(p.Errors()) > 0 {
 		os.Remove(tmpPath)
 		return ""
 	}
-	
+
 	if isInput {
 		// <(command): 执行命令并将输出写入临时文件
 		oldStdout := os.Stdout
@@ -2037,12 +2037,12 @@ func (e *Executor) executeProcessSubstitution(command string, isInput bool) stri
 			return ""
 		}
 		os.Stdout = file
-		
+
 		execErr := e.Execute(program)
-		
+
 		file.Close()
 		os.Stdout = oldStdout
-		
+
 		if execErr != nil {
 			os.Remove(tmpPath)
 			return ""
@@ -2058,7 +2058,7 @@ func (e *Executor) executeProcessSubstitution(command string, isInput bool) stri
 		}
 		file.Close()
 	}
-	
+
 	// 返回临时文件路径
 	return tmpPath
 }
@@ -2070,19 +2070,19 @@ func (e *Executor) evaluateArithmetic(expr string) string {
 	if expr == "" {
 		return "0"
 	}
-	
+
 	// 展开变量
 	expr = e.expandVariablesInString(expr)
-	
+
 	// 简单的算术表达式求值
 	// 支持: +, -, *, /, %, (, )
 	// 使用递归下降解析器
-	
-	result, err := evaluateArithmeticExpression(expr)
+
+	result, err := evaluateArithmeticExpression(expr, e)
 	if err != nil {
 		return "0"
 	}
-	
+
 	return fmt.Sprintf("%d", result)
 }
 
@@ -2091,41 +2091,46 @@ func (e *Executor) evaluateArithmetic(expr string) string {
 // 支持比较运算符: <, <=, >, >=, ==, !=
 // 支持逻辑运算符: &&, ||, ! (逻辑非)
 // 支持括号和函数调用
-func evaluateArithmeticExpression(expr string) (int64, error) {
+func evaluateArithmeticExpression(expr string, e *Executor) (int64, error) {
 	// 移除所有空白字符
 	expr = strings.ReplaceAll(expr, " ", "")
 	expr = strings.ReplaceAll(expr, "\t", "")
-	
+
 	if expr == "" {
 		return 0, nil
 	}
-	
+
 	// 使用递归下降解析器
 	pos := 0
-	result, err := parseArithmeticExpression(expr, &pos)
+	result, err := parseArithmeticExpressionWithExecutor(expr, &pos, e)
 	if err != nil {
 		return 0, err
 	}
-	
+
 	// 确保解析完整个表达式
 	if pos < len(expr) {
 		return 0, fmt.Errorf("unexpected character at position %d: %c", pos, expr[pos])
 	}
-	
+
 	return result, nil
 }
 
 // parseArithmeticExpression 解析算术表达式（处理逻辑或 ||）
 func parseArithmeticExpression(expr string, pos *int) (int64, error) {
-	result, err := parseArithmeticAndExpression(expr, pos)
+	return parseArithmeticExpressionWithExecutor(expr, pos, nil)
+}
+
+// parseArithmeticExpressionWithExecutor 解析算术表达式（处理逻辑或 ||，支持 Executor）
+func parseArithmeticExpressionWithExecutor(expr string, pos *int, e *Executor) (int64, error) {
+	result, err := parseArithmeticAndExpressionWithExecutor(expr, pos, e)
 	if err != nil {
 		return 0, err
 	}
-	
+
 	for *pos < len(expr) {
 		if *pos+1 < len(expr) && expr[*pos] == '|' && expr[*pos+1] == '|' {
 			*pos += 2
-			right, err := parseArithmeticAndExpression(expr, pos)
+			right, err := parseArithmeticAndExpressionWithExecutor(expr, pos, e)
 			if err != nil {
 				return 0, err
 			}
@@ -2141,21 +2146,26 @@ func parseArithmeticExpression(expr string, pos *int) (int64, error) {
 			break
 		}
 	}
-	
+
 	return result, nil
 }
 
 // parseArithmeticAndExpression 解析逻辑与表达式（处理 &&）
 func parseArithmeticAndExpression(expr string, pos *int) (int64, error) {
-	result, err := parseArithmeticComparison(expr, pos)
+	return parseArithmeticAndExpressionWithExecutor(expr, pos, nil)
+}
+
+// parseArithmeticAndExpressionWithExecutor 解析逻辑与表达式（处理 &&，支持 Executor）
+func parseArithmeticAndExpressionWithExecutor(expr string, pos *int, e *Executor) (int64, error) {
+	result, err := parseArithmeticComparisonWithExecutor(expr, pos, e)
 	if err != nil {
 		return 0, err
 	}
-	
+
 	for *pos < len(expr) {
 		if *pos+1 < len(expr) && expr[*pos] == '&' && expr[*pos+1] == '&' {
 			*pos += 2
-			right, err := parseArithmeticComparison(expr, pos)
+			right, err := parseArithmeticComparisonWithExecutor(expr, pos, e)
 			if err != nil {
 				return 0, err
 			}
@@ -2169,21 +2179,26 @@ func parseArithmeticAndExpression(expr string, pos *int) (int64, error) {
 			break
 		}
 	}
-	
+
 	return result, nil
 }
 
 // parseArithmeticComparison 解析比较表达式（处理 <, <=, >, >=, ==, !=）
 func parseArithmeticComparison(expr string, pos *int) (int64, error) {
-	result, err := parseArithmeticBitwiseOr(expr, pos)
+	return parseArithmeticComparisonWithExecutor(expr, pos, nil)
+}
+
+// parseArithmeticComparisonWithExecutor 解析比较表达式（处理 <, <=, >, >=, ==, !=，支持 Executor）
+func parseArithmeticComparisonWithExecutor(expr string, pos *int, e *Executor) (int64, error) {
+	result, err := parseArithmeticBitwiseOrWithExecutor(expr, pos, e)
 	if err != nil {
 		return 0, err
 	}
-	
+
 	for *pos < len(expr) {
 		if *pos+1 < len(expr) && expr[*pos] == '<' && expr[*pos+1] == '=' {
 			*pos += 2
-			right, err := parseArithmeticBitwiseOr(expr, pos)
+			right, err := parseArithmeticBitwiseOrWithExecutor(expr, pos, e)
 			if err != nil {
 				return 0, err
 			}
@@ -2194,7 +2209,7 @@ func parseArithmeticComparison(expr string, pos *int) (int64, error) {
 			}
 		} else if *pos+1 < len(expr) && expr[*pos] == '>' && expr[*pos+1] == '=' {
 			*pos += 2
-			right, err := parseArithmeticBitwiseOr(expr, pos)
+			right, err := parseArithmeticBitwiseOrWithExecutor(expr, pos, e)
 			if err != nil {
 				return 0, err
 			}
@@ -2205,7 +2220,7 @@ func parseArithmeticComparison(expr string, pos *int) (int64, error) {
 			}
 		} else if *pos+1 < len(expr) && expr[*pos] == '=' && expr[*pos+1] == '=' {
 			*pos += 2
-			right, err := parseArithmeticBitwiseOr(expr, pos)
+			right, err := parseArithmeticBitwiseOrWithExecutor(expr, pos, e)
 			if err != nil {
 				return 0, err
 			}
@@ -2216,7 +2231,7 @@ func parseArithmeticComparison(expr string, pos *int) (int64, error) {
 			}
 		} else if *pos+1 < len(expr) && expr[*pos] == '!' && expr[*pos+1] == '=' {
 			*pos += 2
-			right, err := parseArithmeticBitwiseOr(expr, pos)
+			right, err := parseArithmeticBitwiseOrWithExecutor(expr, pos, e)
 			if err != nil {
 				return 0, err
 			}
@@ -2227,7 +2242,7 @@ func parseArithmeticComparison(expr string, pos *int) (int64, error) {
 			}
 		} else if expr[*pos] == '<' {
 			*pos++
-			right, err := parseArithmeticBitwiseOr(expr, pos)
+			right, err := parseArithmeticBitwiseOrWithExecutor(expr, pos, e)
 			if err != nil {
 				return 0, err
 			}
@@ -2238,7 +2253,7 @@ func parseArithmeticComparison(expr string, pos *int) (int64, error) {
 			}
 		} else if expr[*pos] == '>' {
 			*pos++
-			right, err := parseArithmeticBitwiseOr(expr, pos)
+			right, err := parseArithmeticBitwiseOrWithExecutor(expr, pos, e)
 			if err != nil {
 				return 0, err
 			}
@@ -2251,21 +2266,26 @@ func parseArithmeticComparison(expr string, pos *int) (int64, error) {
 			break
 		}
 	}
-	
+
 	return result, nil
 }
 
 // parseArithmeticBitwiseOr 解析按位或表达式（处理 |）
 func parseArithmeticBitwiseOr(expr string, pos *int) (int64, error) {
-	result, err := parseArithmeticBitwiseXor(expr, pos)
+	return parseArithmeticBitwiseOrWithExecutor(expr, pos, nil)
+}
+
+// parseArithmeticBitwiseOrWithExecutor 解析按位或表达式（处理 |，支持 Executor）
+func parseArithmeticBitwiseOrWithExecutor(expr string, pos *int, e *Executor) (int64, error) {
+	result, err := parseArithmeticBitwiseXorWithExecutor(expr, pos, e)
 	if err != nil {
 		return 0, err
 	}
-	
+
 	for *pos < len(expr) {
 		if expr[*pos] == '|' && (*pos+1 >= len(expr) || expr[*pos+1] != '|') {
 			*pos++
-			right, err := parseArithmeticBitwiseXor(expr, pos)
+			right, err := parseArithmeticBitwiseXorWithExecutor(expr, pos, e)
 			if err != nil {
 				return 0, err
 			}
@@ -2274,21 +2294,26 @@ func parseArithmeticBitwiseOr(expr string, pos *int) (int64, error) {
 			break
 		}
 	}
-	
+
 	return result, nil
 }
 
 // parseArithmeticBitwiseXor 解析按位异或表达式（处理 ^）
 func parseArithmeticBitwiseXor(expr string, pos *int) (int64, error) {
-	result, err := parseArithmeticBitwiseAnd(expr, pos)
+	return parseArithmeticBitwiseXorWithExecutor(expr, pos, nil)
+}
+
+// parseArithmeticBitwiseXorWithExecutor 解析按位异或表达式（处理 ^，支持 Executor）
+func parseArithmeticBitwiseXorWithExecutor(expr string, pos *int, e *Executor) (int64, error) {
+	result, err := parseArithmeticBitwiseAndWithExecutor(expr, pos, e)
 	if err != nil {
 		return 0, err
 	}
-	
+
 	for *pos < len(expr) {
 		if expr[*pos] == '^' {
 			*pos++
-			right, err := parseArithmeticBitwiseAnd(expr, pos)
+			right, err := parseArithmeticBitwiseAndWithExecutor(expr, pos, e)
 			if err != nil {
 				return 0, err
 			}
@@ -2297,21 +2322,26 @@ func parseArithmeticBitwiseXor(expr string, pos *int) (int64, error) {
 			break
 		}
 	}
-	
+
 	return result, nil
 }
 
 // parseArithmeticBitwiseAnd 解析按位与表达式（处理 &）
 func parseArithmeticBitwiseAnd(expr string, pos *int) (int64, error) {
-	result, err := parseArithmeticShift(expr, pos)
+	return parseArithmeticBitwiseAndWithExecutor(expr, pos, nil)
+}
+
+// parseArithmeticBitwiseAndWithExecutor 解析按位与表达式（处理 &，支持 Executor）
+func parseArithmeticBitwiseAndWithExecutor(expr string, pos *int, e *Executor) (int64, error) {
+	result, err := parseArithmeticShiftWithExecutor(expr, pos, e)
 	if err != nil {
 		return 0, err
 	}
-	
+
 	for *pos < len(expr) {
 		if expr[*pos] == '&' && (*pos+1 >= len(expr) || expr[*pos+1] != '&') {
 			*pos++
-			right, err := parseArithmeticShift(expr, pos)
+			right, err := parseArithmeticShiftWithExecutor(expr, pos, e)
 			if err != nil {
 				return 0, err
 			}
@@ -2320,28 +2350,33 @@ func parseArithmeticBitwiseAnd(expr string, pos *int) (int64, error) {
 			break
 		}
 	}
-	
+
 	return result, nil
 }
 
 // parseArithmeticShift 解析位移表达式（处理 <<, >>）
 func parseArithmeticShift(expr string, pos *int) (int64, error) {
-	result, err := parseArithmeticAddSub(expr, pos)
+	return parseArithmeticShiftWithExecutor(expr, pos, nil)
+}
+
+// parseArithmeticShiftWithExecutor 解析位移表达式（处理 <<, >>，支持 Executor）
+func parseArithmeticShiftWithExecutor(expr string, pos *int, e *Executor) (int64, error) {
+	result, err := parseArithmeticAddSubWithExecutor(expr, pos, e)
 	if err != nil {
 		return 0, err
 	}
-	
+
 	for *pos < len(expr) {
 		if *pos+1 < len(expr) && expr[*pos] == '<' && expr[*pos+1] == '<' {
 			*pos += 2
-			right, err := parseArithmeticAddSub(expr, pos)
+			right, err := parseArithmeticAddSubWithExecutor(expr, pos, e)
 			if err != nil {
 				return 0, err
 			}
 			result <<= right
 		} else if *pos+1 < len(expr) && expr[*pos] == '>' && expr[*pos+1] == '>' {
 			*pos += 2
-			right, err := parseArithmeticAddSub(expr, pos)
+			right, err := parseArithmeticAddSubWithExecutor(expr, pos, e)
 			if err != nil {
 				return 0, err
 			}
@@ -2350,28 +2385,33 @@ func parseArithmeticShift(expr string, pos *int) (int64, error) {
 			break
 		}
 	}
-	
+
 	return result, nil
 }
 
 // parseArithmeticAddSub 解析加减表达式（处理 +, -）
 func parseArithmeticAddSub(expr string, pos *int) (int64, error) {
-	result, err := parseArithmeticMulDivMod(expr, pos)
+	return parseArithmeticAddSubWithExecutor(expr, pos, nil)
+}
+
+// parseArithmeticAddSubWithExecutor 解析加减表达式（处理 +, -，支持 Executor）
+func parseArithmeticAddSubWithExecutor(expr string, pos *int, e *Executor) (int64, error) {
+	result, err := parseArithmeticMulDivModWithExecutor(expr, pos, e)
 	if err != nil {
 		return 0, err
 	}
-	
+
 	for *pos < len(expr) {
 		if expr[*pos] == '+' {
 			*pos++
-			term, err := parseArithmeticMulDivMod(expr, pos)
+			term, err := parseArithmeticMulDivModWithExecutor(expr, pos, e)
 			if err != nil {
 				return 0, err
 			}
 			result += term
 		} else if expr[*pos] == '-' {
 			*pos++
-			term, err := parseArithmeticMulDivMod(expr, pos)
+			term, err := parseArithmeticMulDivModWithExecutor(expr, pos, e)
 			if err != nil {
 				return 0, err
 			}
@@ -2380,28 +2420,33 @@ func parseArithmeticAddSub(expr string, pos *int) (int64, error) {
 			break
 		}
 	}
-	
+
 	return result, nil
 }
 
 // parseArithmeticMulDivMod 解析乘除模表达式（处理 *, /, %）
 func parseArithmeticMulDivMod(expr string, pos *int) (int64, error) {
-	result, err := parseArithmeticPower(expr, pos)
+	return parseArithmeticMulDivModWithExecutor(expr, pos, nil)
+}
+
+// parseArithmeticMulDivModWithExecutor 解析乘除模表达式（处理 *, /, %，支持 Executor）
+func parseArithmeticMulDivModWithExecutor(expr string, pos *int, e *Executor) (int64, error) {
+	result, err := parseArithmeticPowerWithExecutor(expr, pos, e)
 	if err != nil {
 		return 0, err
 	}
-	
+
 	for *pos < len(expr) {
 		if expr[*pos] == '*' && (*pos+1 >= len(expr) || expr[*pos+1] != '*') {
 			*pos++
-			factor, err := parseArithmeticPower(expr, pos)
+			factor, err := parseArithmeticPowerWithExecutor(expr, pos, e)
 			if err != nil {
 				return 0, err
 			}
 			result *= factor
 		} else if expr[*pos] == '/' {
 			*pos++
-			factor, err := parseArithmeticPower(expr, pos)
+			factor, err := parseArithmeticPowerWithExecutor(expr, pos, e)
 			if err != nil {
 				return 0, err
 			}
@@ -2411,7 +2456,7 @@ func parseArithmeticMulDivMod(expr string, pos *int) (int64, error) {
 			result /= factor
 		} else if expr[*pos] == '%' {
 			*pos++
-			factor, err := parseArithmeticPower(expr, pos)
+			factor, err := parseArithmeticPowerWithExecutor(expr, pos, e)
 			if err != nil {
 				return 0, err
 			}
@@ -2423,21 +2468,26 @@ func parseArithmeticMulDivMod(expr string, pos *int) (int64, error) {
 			break
 		}
 	}
-	
+
 	return result, nil
 }
 
 // parseArithmeticPower 解析幂表达式（处理 **）
 func parseArithmeticPower(expr string, pos *int) (int64, error) {
-	result, err := parseArithmeticUnary(expr, pos)
+	return parseArithmeticPowerWithExecutor(expr, pos, nil)
+}
+
+// parseArithmeticPowerWithExecutor 解析幂表达式（处理 **，支持 Executor）
+func parseArithmeticPowerWithExecutor(expr string, pos *int, e *Executor) (int64, error) {
+	result, err := parseArithmeticUnaryWithExecutor(expr, pos, e)
 	if err != nil {
 		return 0, err
 	}
-	
+
 	for *pos < len(expr) {
 		if *pos+1 < len(expr) && expr[*pos] == '*' && expr[*pos+1] == '*' {
 			*pos += 2
-			exponent, err := parseArithmeticUnary(expr, pos)
+			exponent, err := parseArithmeticUnaryWithExecutor(expr, pos, e)
 			if err != nil {
 				return 0, err
 			}
@@ -2451,37 +2501,42 @@ func parseArithmeticPower(expr string, pos *int) (int64, error) {
 			break
 		}
 	}
-	
+
 	return result, nil
 }
 
 // parseArithmeticUnary 解析一元表达式（处理 +, -, ~, !）
 func parseArithmeticUnary(expr string, pos *int) (int64, error) {
+	return parseArithmeticUnaryWithExecutor(expr, pos, nil)
+}
+
+// parseArithmeticUnaryWithExecutor 解析一元表达式（处理 +, -, ~, !，支持 Executor）
+func parseArithmeticUnaryWithExecutor(expr string, pos *int, e *Executor) (int64, error) {
 	if *pos >= len(expr) {
 		return 0, fmt.Errorf("unexpected end of expression")
 	}
-	
+
 	// 处理一元运算符
 	if expr[*pos] == '+' {
 		*pos++
-		return parseArithmeticUnary(expr, pos)
+		return parseArithmeticUnaryWithExecutor(expr, pos, e)
 	} else if expr[*pos] == '-' {
 		*pos++
-		result, err := parseArithmeticUnary(expr, pos)
+		result, err := parseArithmeticUnaryWithExecutor(expr, pos, e)
 		if err != nil {
 			return 0, err
 		}
 		return -result, nil
 	} else if expr[*pos] == '~' {
 		*pos++
-		result, err := parseArithmeticUnary(expr, pos)
+		result, err := parseArithmeticUnaryWithExecutor(expr, pos, e)
 		if err != nil {
 			return 0, err
 		}
 		return ^result, nil
 	} else if expr[*pos] == '!' {
 		*pos++
-		result, err := parseArithmeticUnary(expr, pos)
+		result, err := parseArithmeticUnaryWithExecutor(expr, pos, e)
 		if err != nil {
 			return 0, err
 		}
@@ -2491,20 +2546,25 @@ func parseArithmeticUnary(expr string, pos *int) (int64, error) {
 		}
 		return 1, nil
 	}
-	
-	return parseArithmeticFactor(expr, pos)
+
+	return parseArithmeticFactorWithExecutor(expr, pos, e)
 }
 
 // parseArithmeticFactor 解析因子（处理数字、括号、函数调用）
 func parseArithmeticFactor(expr string, pos *int) (int64, error) {
+	return parseArithmeticFactorWithExecutor(expr, pos, nil)
+}
+
+// parseArithmeticFactorWithExecutor 解析因子（带 Executor 实例，用于字符串参数）
+func parseArithmeticFactorWithExecutor(expr string, pos *int, e *Executor) (int64, error) {
 	if *pos >= len(expr) {
 		return 0, fmt.Errorf("unexpected end of expression")
 	}
-	
+
 	// 处理括号
 	if expr[*pos] == '(' {
 		*pos++
-		result, err := parseArithmeticExpression(expr, pos)
+		result, err := parseArithmeticExpressionWithExecutor(expr, pos, e)
 		if err != nil {
 			return 0, err
 		}
@@ -2514,12 +2574,12 @@ func parseArithmeticFactor(expr string, pos *int) (int64, error) {
 		*pos++
 		return result, nil
 	}
-	
+
 	// 处理函数调用（必须在解析数字之前）
 	// 检查是否是函数调用，如 abs(, min(, max( 等
 	funcName := ""
 	funcStart := *pos
-	
+
 	// 先尝试读取函数名（字母、数字、下划线）
 	for *pos < len(expr) {
 		ch := expr[*pos]
@@ -2537,16 +2597,35 @@ func parseArithmeticFactor(expr string, pos *int) (int64, error) {
 			// 找到函数名和开括号，这是一个函数调用
 			if funcName != "" {
 				*pos++ // 跳过 (
-				args, err := parseArithmeticFunctionArgs(expr, pos)
-				if err != nil {
-					return 0, err
+				// 检查是否需要字符串参数的函数
+				if funcName == "substr" || funcName == "index" {
+					// 对于需要字符串参数的函数，使用新的解析函数
+					if e == nil {
+						return 0, fmt.Errorf("Executor instance required for string arithmetic functions")
+					}
+					args, err := parseArithmeticFunctionArgsWithStrings(expr, pos, funcName, e)
+					if err != nil {
+						return 0, err
+					}
+					// 调用需要字符串参数的函数
+					result, err := evaluateArithmeticFunctionWithMixedArgs(funcName, args, e)
+					if err != nil {
+						return 0, fmt.Errorf("arithmetic function %s: %v", funcName, err)
+					}
+					return result, nil
+				} else {
+					// 对于普通函数，使用原有的解析逻辑
+					args, err := parseArithmeticFunctionArgs(expr, pos)
+					if err != nil {
+						return 0, err
+					}
+					// 调用算术函数
+					result, err := evaluateArithmeticFunction(funcName, args)
+					if err != nil {
+						return 0, fmt.Errorf("arithmetic function %s: %v", funcName, err)
+					}
+					return result, nil
 				}
-				// 调用算术函数
-				result, err := evaluateArithmeticFunction(funcName, args)
-				if err != nil {
-					return 0, fmt.Errorf("arithmetic function %s: %v", funcName, err)
-				}
-				return result, nil
 			}
 			// 如果没有函数名，这是括号表达式，不是函数调用
 			break
@@ -2556,75 +2635,189 @@ func parseArithmeticFactor(expr string, pos *int) (int64, error) {
 			break
 		}
 	}
-	
+
 	// 如果不是函数调用，恢复位置
 	if funcName != "" {
 		*pos = funcStart
 	}
-	
+
 	// 解析数字
 	start := *pos
 	if expr[*pos] == '-' || expr[*pos] == '+' {
 		*pos++
 	}
-	
+
 	if *pos >= len(expr) || !isDigitArith(expr[*pos]) {
 		return 0, fmt.Errorf("expected number at position %d: %c", *pos, expr[*pos])
 	}
-	
+
 	for *pos < len(expr) && isDigitArith(expr[*pos]) {
 		*pos++
 	}
-	
+
 	numStr := expr[start:*pos]
 	value, err := strconv.ParseInt(numStr, 10, 64)
 	if err != nil {
 		return 0, err
 	}
-	
+
 	return value, nil
 }
-
 
 // isDigitArith 判断是否为数字（用于算术表达式）
 func isDigitArith(ch byte) bool {
 	return ch >= '0' && ch <= '9'
 }
 
-// parseArithmeticFunctionArgs 解析算术函数参数
-func parseArithmeticFunctionArgs(expr string, pos *int) ([]int64, error) {
-	var args []int64
-	
+// parseArithmeticStringArg 解析字符串参数（变量展开或字符串字面量）
+// 从原始表达式（未展开）中解析字符串参数
+// 返回字符串值和新的位置
+func parseArithmeticStringArg(expr string, pos *int, e *Executor) (string, error) {
 	// 跳过空白字符
 	for *pos < len(expr) && (expr[*pos] == ' ' || expr[*pos] == '\t') {
 		*pos++
 	}
-	
+
+	if *pos >= len(expr) {
+		return "", fmt.Errorf("unexpected end of expression")
+	}
+
+	// 检查是否是字符串字面量
+	if expr[*pos] == '"' || expr[*pos] == '\'' {
+		quote := expr[*pos]
+		*pos++ // 跳过开始引号
+		start := *pos
+
+		// 查找结束引号
+		for *pos < len(expr) && expr[*pos] != quote {
+			if expr[*pos] == '\\' && *pos+1 < len(expr) {
+				*pos += 2 // 跳过转义字符
+			} else {
+				*pos++
+			}
+		}
+
+		if *pos >= len(expr) {
+			return "", fmt.Errorf("unclosed string literal")
+		}
+
+		str := expr[start:*pos]
+		*pos++ // 跳过结束引号
+		return str, nil
+	}
+
+	// 检查是否是变量展开 $VAR 或 ${VAR}
+	if expr[*pos] == '$' {
+		*pos++ // 跳过 $
+		varName := ""
+
+		if *pos < len(expr) && expr[*pos] == '{' {
+			// ${VAR} 格式
+			*pos++ // 跳过 {
+			start := *pos
+			for *pos < len(expr) && expr[*pos] != '}' {
+				*pos++
+			}
+			if *pos >= len(expr) {
+				return "", fmt.Errorf("unclosed variable expansion")
+			}
+			varName = expr[start:*pos]
+			*pos++ // 跳过 }
+		} else if *pos < len(expr) {
+			// $VAR 格式
+			start := *pos
+			for *pos < len(expr) && ((expr[*pos] >= 'a' && expr[*pos] <= 'z') ||
+				(expr[*pos] >= 'A' && expr[*pos] <= 'Z') ||
+				(expr[*pos] >= '0' && expr[*pos] <= '9') ||
+				expr[*pos] == '_') {
+				*pos++
+			}
+			varName = expr[start:*pos]
+		}
+
+		if varName == "" {
+			return "", fmt.Errorf("invalid variable name")
+		}
+
+		// 从 Executor 获取变量值
+		if e == nil {
+			return "", fmt.Errorf("Executor instance required for variable expansion")
+		}
+
+		varValue := e.env[varName]
+		if varValue == "" {
+			varValue = os.Getenv(varName)
+		}
+
+		return varValue, nil
+	}
+
+	return "", fmt.Errorf("expected string argument (variable or string literal) at position %d", *pos)
+}
+
+// parseArithmeticFunctionArgsWithStrings 解析算术函数参数（支持混合参数类型）
+// 根据函数名判断哪些参数是字符串，哪些是数字
+func parseArithmeticFunctionArgsWithStrings(expr string, pos *int, funcName string, e *Executor) ([]ArithmeticFunctionArg, error) {
+	var args []ArithmeticFunctionArg
+
+	// 确定哪些参数位置需要字符串
+	stringArgPositions := make(map[int]bool)
+	if funcName == "substr" {
+		stringArgPositions[0] = true // 第一个参数是字符串
+	} else if funcName == "index" {
+		stringArgPositions[0] = true // 第一个参数是字符串
+		stringArgPositions[1] = true // 第二个参数也是字符串
+	}
+
+	// 跳过空白字符
+	for *pos < len(expr) && (expr[*pos] == ' ' || expr[*pos] == '\t') {
+		*pos++
+	}
+
 	// 如果下一个字符是 )，没有参数
 	if *pos < len(expr) && expr[*pos] == ')' {
 		*pos++ // 跳过 )
 		return args, nil
 	}
-	
+
 	// 解析参数列表
+	argIndex := 0
 	for {
-		// 解析一个参数（算术表达式）
-		arg, err := parseArithmeticExpression(expr, pos)
-		if err != nil {
-			return nil, err
+		// 检查这个参数位置是否需要字符串
+		if stringArgPositions[argIndex] {
+			// 解析字符串参数
+			strValue, err := parseArithmeticStringArg(expr, pos, e)
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, ArithmeticFunctionArg{
+				Type:   ArithmeticArgTypeString,
+				String: strValue,
+			})
+		} else {
+			// 解析数字参数（算术表达式）
+			numValue, err := parseArithmeticExpression(expr, pos)
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, ArithmeticFunctionArg{
+				Type:   ArithmeticArgTypeNumber,
+				Number: numValue,
+			})
 		}
-		args = append(args, arg)
-		
+
+		argIndex++
+
 		// 跳过空白字符
 		for *pos < len(expr) && (expr[*pos] == ' ' || expr[*pos] == '\t') {
 			*pos++
 		}
-		
+
 		// 检查是否有更多参数
 		if *pos >= len(expr) {
 			return nil, fmt.Errorf("missing closing parenthesis in function call")
 		}
-		
+
 		if expr[*pos] == ')' {
 			*pos++ // 跳过 )
 			break
@@ -2635,7 +2828,55 @@ func parseArithmeticFunctionArgs(expr string, pos *int) ([]int64, error) {
 			return nil, fmt.Errorf("unexpected character in function arguments: %c", expr[*pos])
 		}
 	}
-	
+
+	return args, nil
+}
+
+// parseArithmeticFunctionArgs 解析算术函数参数
+func parseArithmeticFunctionArgs(expr string, pos *int) ([]int64, error) {
+	var args []int64
+
+	// 跳过空白字符
+	for *pos < len(expr) && (expr[*pos] == ' ' || expr[*pos] == '\t') {
+		*pos++
+	}
+
+	// 如果下一个字符是 )，没有参数
+	if *pos < len(expr) && expr[*pos] == ')' {
+		*pos++ // 跳过 )
+		return args, nil
+	}
+
+	// 解析参数列表
+	for {
+		// 解析一个参数（算术表达式）
+		arg, err := parseArithmeticExpression(expr, pos)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, arg)
+
+		// 跳过空白字符
+		for *pos < len(expr) && (expr[*pos] == ' ' || expr[*pos] == '\t') {
+			*pos++
+		}
+
+		// 检查是否有更多参数
+		if *pos >= len(expr) {
+			return nil, fmt.Errorf("missing closing parenthesis in function call")
+		}
+
+		if expr[*pos] == ')' {
+			*pos++ // 跳过 )
+			break
+		} else if expr[*pos] == ',' {
+			*pos++ // 跳过 ,
+			// 继续解析下一个参数
+		} else {
+			return nil, fmt.Errorf("unexpected character in function arguments: %c", expr[*pos])
+		}
+	}
+
 	return args, nil
 }
 
@@ -2666,7 +2907,7 @@ func evaluateArithmeticFunction(name string, args []int64) (int64, error) {
 			return -args[0], nil
 		}
 		return args[0], nil
-		
+
 	case "min":
 		if len(args) < 1 {
 			return 0, fmt.Errorf("min requires at least 1 argument, got %d", len(args))
@@ -2678,7 +2919,7 @@ func evaluateArithmeticFunction(name string, args []int64) (int64, error) {
 			}
 		}
 		return min, nil
-		
+
 	case "max":
 		if len(args) < 1 {
 			return 0, fmt.Errorf("max requires at least 1 argument, got %d", len(args))
@@ -2690,7 +2931,7 @@ func evaluateArithmeticFunction(name string, args []int64) (int64, error) {
 			}
 		}
 		return max, nil
-		
+
 	case "length":
 		// length 函数需要字符串参数，但算术表达式中只能处理数字
 		// 这里简化处理，将数字转换为字符串再计算长度
@@ -2703,14 +2944,14 @@ func evaluateArithmeticFunction(name string, args []int64) (int64, error) {
 			str = str[1:]
 		}
 		return int64(len(str)), nil
-		
+
 	case "int":
 		// int 函数向下取整（对于整数，直接返回）
 		if len(args) != 1 {
 			return 0, fmt.Errorf("int requires 1 argument, got %d", len(args))
 		}
 		return args[0], nil
-		
+
 	case "rand":
 		// rand 函数返回 0 到 32767 之间的随机数
 		if len(args) > 0 {
@@ -2719,7 +2960,7 @@ func evaluateArithmeticFunction(name string, args []int64) (int64, error) {
 		// 使用简单的线性同余生成器
 		// 注意：这不是线程安全的，但对于单线程 shell 足够了
 		return int64(rand.Intn(32768)), nil
-		
+
 	case "srand":
 		// srand 函数设置随机数种子
 		if len(args) > 1 {
@@ -2731,7 +2972,7 @@ func evaluateArithmeticFunction(name string, args []int64) (int64, error) {
 			rand.Seed(time.Now().UnixNano())
 		}
 		return 0, nil
-		
+
 	default:
 		return 0, fmt.Errorf("unknown arithmetic function: %s", name)
 	}
@@ -2756,7 +2997,7 @@ func evaluateArithmeticFunctionWithStrings(name string, args []int64, stringArgs
 		s := stringArgs[0]
 		start := args[0]
 		length := args[1]
-		
+
 		// 处理负数索引（从末尾开始）
 		if start < 0 {
 			start = int64(len(s)) + start
@@ -2767,17 +3008,17 @@ func evaluateArithmeticFunctionWithStrings(name string, args []int64, stringArgs
 		if start >= int64(len(s)) {
 			return 0, nil // 返回空字符串的长度（0）
 		}
-		
+
 		// 计算结束位置
 		end := start + length
 		if end > int64(len(s)) {
 			end = int64(len(s))
 		}
-		
+
 		// 返回子字符串的长度（简化实现，实际应该返回字符串的数值表示）
 		// 这里返回子字符串的长度作为占位符
 		return end - start, nil
-		
+
 	case "index":
 		// index(s, t) - 查找子字符串位置
 		// 参数：s 和 t 都是字符串（通过 stringArgs 传递）
@@ -2786,16 +3027,104 @@ func evaluateArithmeticFunctionWithStrings(name string, args []int64, stringArgs
 		}
 		s := stringArgs[0]
 		t := stringArgs[1]
-		
+
 		// 查找子字符串位置（从 1 开始，bash 的行为）
 		pos := strings.Index(s, t)
 		if pos == -1 {
 			return 0, nil // 未找到，返回 0
 		}
 		return int64(pos + 1), nil // bash 中索引从 1 开始
-		
+
 	default:
 		return 0, fmt.Errorf("unknown string arithmetic function: %s", name)
+	}
+}
+
+// evaluateArithmeticFunctionWithMixedArgs 计算需要混合参数类型的算术函数
+// 这个函数处理 substr 和 index 等需要字符串和数字混合参数的函数
+func evaluateArithmeticFunctionWithMixedArgs(name string, args []ArithmeticFunctionArg, e *Executor) (int64, error) {
+	// 分离字符串参数和数字参数
+	var stringArgs []string
+	var numArgs []int64
+
+	for _, arg := range args {
+		if arg.Type == ArithmeticArgTypeString {
+			stringArgs = append(stringArgs, arg.String)
+		} else {
+			numArgs = append(numArgs, arg.Number)
+		}
+	}
+
+	// 调用相应的函数实现
+	switch name {
+	case "substr":
+		// substr(s, start, length) - 子字符串
+		// 参数：s 是字符串，start 和 length 是数字
+		if len(stringArgs) < 1 {
+			return 0, fmt.Errorf("substr requires 1 string argument, got %d", len(stringArgs))
+		}
+		if len(numArgs) < 2 {
+			return 0, fmt.Errorf("substr requires 2 numeric arguments (start, length), got %d", len(numArgs))
+		}
+		s := stringArgs[0]
+		start := numArgs[0]
+		length := numArgs[1]
+
+		// 在 bash 中，substr(s, start, length) 的 start 是从 1 开始的索引
+		// 需要转换为 0-based 索引
+		// 如果 start <= 0，则从字符串开头开始（位置 0）
+		if start <= 0 {
+			start = 0
+		} else {
+			start = start - 1 // 转换为 0-based 索引
+		}
+
+		// 处理负数索引（从末尾开始，但 bash 中负数索引的行为可能不同）
+		// 这里简化处理：如果 start 仍然是负数，则从字符串开头开始
+		if start < 0 {
+			start = 0
+		}
+
+		// 检查是否超出范围
+		if start >= int64(len(s)) {
+			return 0, nil // 超出范围，返回 0（空字符串的第一个字符的 ASCII 值是 0）
+		}
+
+		// 计算结束位置
+		end := start + length
+		if end > int64(len(s)) {
+			end = int64(len(s))
+		}
+		if end <= start {
+			return 0, nil // 长度为 0 或负数，返回 0
+		}
+
+		// 在 bash 中，substr(s, start, length) 返回子字符串的第一个字符的 ASCII 值
+		substr := s[start:end]
+		if len(substr) == 0 {
+			return 0, nil
+		}
+		// 返回第一个字符的 ASCII 值
+		return int64(substr[0]), nil
+
+	case "index":
+		// index(s, t) - 查找子字符串位置
+		// 参数：s 和 t 都是字符串
+		if len(stringArgs) < 2 {
+			return 0, fmt.Errorf("index requires 2 string arguments, got %d", len(stringArgs))
+		}
+		s := stringArgs[0]
+		t := stringArgs[1]
+
+		// 查找子字符串位置（从 1 开始，bash 的行为）
+		pos := strings.Index(s, t)
+		if pos == -1 {
+			return 0, nil // 未找到，返回 0
+		}
+		return int64(pos + 1), nil // bash 中索引从 1 开始
+
+	default:
+		return 0, fmt.Errorf("unknown arithmetic function with mixed args: %s", name)
 	}
 }
 
@@ -2804,12 +3133,12 @@ func (e *Executor) evaluateDoubleBracketExpression(args []string) (bool, error) 
 	if len(args) == 0 {
 		return false, fmt.Errorf("[[: 缺少参数")
 	}
-	
+
 	// 移除结束括号 ]]
 	if len(args) > 0 && args[len(args)-1] == "]]" {
 		args = args[:len(args)-1]
 	}
-	
+
 	// 使用递归下降解析器处理 && 和 ||
 	return e.parseDoubleBracketExpression(args, 0)
 }
@@ -2821,7 +3150,7 @@ func (e *Executor) parseDoubleBracketExpression(args []string, pos int) (bool, e
 		return false, err
 	}
 	pos = newPos
-	
+
 	for pos < len(args) && args[pos] == "||" {
 		pos++ // 跳过 ||
 		right, newPos, err := e.parseDoubleBracketAndExpression(args, pos)
@@ -2831,7 +3160,7 @@ func (e *Executor) parseDoubleBracketExpression(args []string, pos int) (bool, e
 		pos = newPos
 		left = left || right
 	}
-	
+
 	return left, nil
 }
 
@@ -2842,7 +3171,7 @@ func (e *Executor) parseDoubleBracketAndExpression(args []string, pos int) (bool
 		return false, pos, err
 	}
 	pos = newPos
-	
+
 	for pos < len(args) && args[pos] == "&&" {
 		pos++ // 跳过 &&
 		right, newPos, err := e.parseDoubleBracketPrimaryExpression(args, pos)
@@ -2852,7 +3181,7 @@ func (e *Executor) parseDoubleBracketAndExpression(args []string, pos int) (bool
 		pos = newPos
 		left = left && right
 	}
-	
+
 	return left, pos, nil
 }
 
@@ -2861,7 +3190,7 @@ func (e *Executor) parseDoubleBracketPrimaryExpression(args []string, pos int) (
 	if pos >= len(args) {
 		return false, pos, fmt.Errorf("[[: 表达式不完整")
 	}
-	
+
 	// 处理括号表达式
 	if args[pos] == "(" {
 		pos++
@@ -2881,7 +3210,7 @@ func (e *Executor) parseDoubleBracketPrimaryExpression(args []string, pos int) (
 		if depth != 0 {
 			return false, pos, fmt.Errorf("[[: 括号不匹配")
 		}
-		
+
 		// 递归解析括号内的表达式
 		result, err := e.parseDoubleBracketExpression(args[pos:endPos], 0)
 		if err != nil {
@@ -2889,7 +3218,7 @@ func (e *Executor) parseDoubleBracketPrimaryExpression(args []string, pos int) (
 		}
 		return result, endPos + 1, nil
 	}
-	
+
 	// 处理 ! 运算符
 	if args[pos] == "!" {
 		pos++
@@ -2899,7 +3228,7 @@ func (e *Executor) parseDoubleBracketPrimaryExpression(args []string, pos int) (
 		}
 		return !result, newPos, nil
 	}
-	
+
 	// 处理单个测试表达式
 	// 找到测试表达式的结束位置（遇到 &&, ||, ), 或到达末尾）
 	endPos := pos
@@ -2909,24 +3238,24 @@ func (e *Executor) parseDoubleBracketPrimaryExpression(args []string, pos int) (
 		}
 		endPos++
 	}
-	
+
 	// 提取测试表达式
 	testArgs := args[pos:endPos]
 	if len(testArgs) == 0 {
 		return false, pos, fmt.Errorf("[[: 空表达式")
 	}
-	
+
 	// 调用 test 命令来求值
 	testFunc := e.builtins["test"]
 	if testFunc == nil {
 		return false, pos, fmt.Errorf("test命令未找到")
 	}
-	
+
 	// 临时修改环境变量，调用 test 命令
 	// 注意：test 命令返回 error 表示失败，nil 表示成功
 	err := testFunc(testArgs, e.env)
 	result := err == nil
-	
+
 	return result, endPos, nil
 }
 
@@ -2935,29 +3264,29 @@ func (e *Executor) parseDoubleBracketPrimaryExpression(args []string, pos int) (
 func (e *Executor) readHereDocument(delimiter string, quoted bool, stripTabs bool) string {
 	var content strings.Builder
 	scanner := bufio.NewScanner(os.Stdin)
-	
+
 	for scanner.Scan() {
 		line := scanner.Text()
-		
+
 		// 检查是否是分隔符
 		if strings.TrimSpace(line) == delimiter {
 			break
 		}
-		
+
 		// 如果 stripTabs 为 true，剥离前导制表符
 		if stripTabs {
 			line = strings.TrimLeft(line, "\t")
 		}
-		
+
 		// 如果 quoted 为 false，展开变量
 		if !quoted {
 			line = e.expandVariablesInString(line)
 		}
-		
+
 		content.WriteString(line)
 		content.WriteString("\n")
 	}
-	
+
 	return content.String()
 }
 
@@ -2970,4 +3299,3 @@ func splitEnv(env string) (string, string) {
 	}
 	return env, ""
 }
-

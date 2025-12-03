@@ -130,6 +130,72 @@ func TestArithmeticFunctions(t *testing.T) {
 			expected: "7",
 			wantErr:  false,
 		},
+		{
+			name:     "substr基本用法",
+			input:    "export STR='Hello'; echo $((substr($STR, 1, 3)))",
+			expected: "72", // 'H' 的 ASCII 值是 72（start=1 表示第一个字符）
+			wantErr:  false,
+		},
+		{
+			name:     "substr第一个字符",
+			input:    "export STR='Hello'; echo $((substr($STR, 1, 1)))",
+			expected: "72", // 'H' 的 ASCII 值是 72
+			wantErr:  false,
+		},
+		{
+			name:     "substr第二个字符",
+			input:    "export STR='Hello'; echo $((substr($STR, 2, 1)))",
+			expected: "101", // 'e' 的 ASCII 值是 101
+			wantErr:  false,
+		},
+		{
+			name:     "substr负数索引",
+			input:    "export STR='Hello'; echo $((substr($STR, 0, 2)))",
+			expected: "72", // start=0 或负数时从开头开始，'H' 的 ASCII 值是 72
+			wantErr:  false,
+		},
+		{
+			name:     "substr超出范围",
+			input:    "export STR='Hello'; echo $((substr($STR, 10, 3)))",
+			expected: "0", // 超出范围返回 0
+			wantErr:  false,
+		},
+		{
+			name:     "substr字符串字面量",
+			input:    "echo $((substr('Hello', 1, 3)))",
+			expected: "72", // 'H' 的 ASCII 值是 72（start=1 表示第一个字符）
+			wantErr:  false,
+		},
+		{
+			name:     "index基本用法",
+			input:    "export STR='Hello'; echo $((index($STR, 'll')))",
+			expected: "3", // 'll' 在位置 3（从 1 开始）
+			wantErr:  false,
+		},
+		{
+			name:     "index单个字符",
+			input:    "export STR='Hello'; echo $((index($STR, 'e')))",
+			expected: "2", // 'e' 在位置 2（从 1 开始）
+			wantErr:  false,
+		},
+		{
+			name:     "index未找到",
+			input:    "export STR='Hello'; echo $((index($STR, 'x')))",
+			expected: "0", // 未找到返回 0
+			wantErr:  false,
+		},
+		{
+			name:     "index字符串字面量",
+			input:    "echo $((index('Hello', 'll')))",
+			expected: "3", // 'll' 在位置 3（从 1 开始）
+			wantErr:  false,
+		},
+		{
+			name:     "index第一个字符",
+			input:    "export STR='Hello'; echo $((index($STR, 'H')))",
+			expected: "1", // 'H' 在位置 1（从 1 开始）
+			wantErr:  false,
+		},
 	}
 
 	for _, tt := range tests {

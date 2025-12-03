@@ -49,17 +49,17 @@ func (l *Lexer) readChar() {
 		l.ch = l.input[l.readPosition]
 		l.chRune = rune(l.ch)
 		l.chWidth = 1
-		l.position = l.readPosition
-		l.readPosition++
-		if l.ch == '\n' {
-			l.line++
-			l.column = 1
-		} else {
-			l.column++
-		}
-		return
+	l.position = l.readPosition
+	l.readPosition++
+	if l.ch == '\n' {
+		l.line++
+		l.column = 1
+	} else {
+		l.column++
 	}
-	
+		return
+}
+
 	// UTF-8 多字节字符路径
 	l.position = l.readPosition
 	r, width := utf8.DecodeRuneInString(l.input[l.readPosition:])
@@ -102,7 +102,7 @@ func (l *Lexer) peekChar() byte {
 	}
 	// 快速路径：ASCII 字符
 	if l.input[l.readPosition] < 128 {
-		return l.input[l.readPosition]
+	return l.input[l.readPosition]
 	}
 	// 多字节字符返回 0（表示不是 ASCII）
 	return 0
@@ -382,10 +382,10 @@ func (l *Lexer) NextToken() Token {
 		// 检查是否真的到达文件末尾（chRune 也为 0）
 		// 如果 chRune 不为 0，说明是多字节字符，应该进入 default 分支处理
 		if l.chRune == 0 {
-			tok.Literal = ""
-			tok.Type = EOF
-			tok.Line = l.line
-			tok.Column = l.column
+		tok.Literal = ""
+		tok.Type = EOF
+		tok.Line = l.line
+		tok.Column = l.column
 		} else {
 			// 多字节字符，进入 default 分支处理
 			// 这里不返回，让代码继续到 default 分支
@@ -534,7 +534,7 @@ func (l *Lexer) readIdentifier() string {
 			if l.chWidth > 0 {
 				nextPosition = l.position + l.chWidth
 			}
-			l.readChar()
+		l.readChar()
 			// 检查下一个字符是否匹配
 			if !(unicode.IsLetter(l.chRune) || unicode.IsDigit(l.chRune) || l.chRune == '_') {
 				// 下一个字符不匹配，使用之前保存的位置作为结束位置
@@ -621,7 +621,7 @@ func (l *Lexer) readNumber() string {
 		if !isDigit(l.ch) {
 			// 下一个字符不是数字，使用之前保存的结束位置
 			return l.input[position:currentEnd]
-		}
+	}
 	}
 	// 当字符不匹配时，l.position 指向当前字符的开始位置（不匹配的字符）
 	// 这就是最后一个匹配字符的结束位置
@@ -790,7 +790,7 @@ func (l *Lexer) readVariable() Token {
 			if unicode.IsLetter(l.chRune) || unicode.IsDigit(l.chRune) || l.chRune == '_' {
 				// 保存当前字符的结束位置
 				currentEnd := l.readPosition
-				l.readChar()
+			l.readChar()
 				// 检查下一个字符是否匹配
 				if !(unicode.IsLetter(l.chRune) || unicode.IsDigit(l.chRune) || l.chRune == '_') {
 					// 下一个字符不匹配，使用之前保存的结束位置
@@ -1430,7 +1430,7 @@ func (l *Lexer) readDollarSingleQuote() Token {
 	if l.ch == 0 {
 		l.addError(LexerErrorTypeUnclosedString, "未闭合的 $'...' 字符串", "'", startLine, startColumn)
 	}
-
+	
 	return Token{
 		Type:    STRING_DOLLAR_SINGLE,
 		Literal: literal.String(),
@@ -1481,7 +1481,7 @@ func (l *Lexer) readDollarDoubleQuote() Token {
 	if l.ch == 0 {
 		l.addError(LexerErrorTypeUnclosedString, "未闭合的 $\"...\" 字符串", "\"", startLine, startColumn)
 	}
-
+	
 	return Token{
 		Type:    STRING_DOLLAR_DOUBLE,
 		Literal: literal.String(),
