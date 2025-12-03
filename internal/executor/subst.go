@@ -224,14 +224,10 @@ func (e *Executor) wordSplit(text string) []string {
 	
 	// 如果 IFS 未设置，使用默认值
 	if ifs == "" {
-		// 检查是否是未设置（nil）还是空字符串
-		// 在 Go 中，如果 env["IFS"] 不存在，返回空字符串
-		// 我们需要检查 os.Getenv 来区分
-		if os.Getenv("IFS") == "" {
-			// IFS 未设置，使用默认值 " \t\n"
-			ifs = " \t\n"
-		} else {
-			// IFS 设置为空字符串，不进行分割
+		// 检查是否在 e.env 中显式设置为空字符串
+		_, existsInEnv := e.env["IFS"]
+		if existsInEnv {
+			// IFS 显式设置为空字符串，不进行分割
 			// 每个字符都是独立的单词
 			words := make([]string, 0, len(text))
 			for _, r := range text {
@@ -239,6 +235,8 @@ func (e *Executor) wordSplit(text string) []string {
 			}
 			return words
 		}
+		// IFS 未设置，使用默认值 " \t\n"
+		ifs = " \t\n"
 	}
 	
 	// 检查 IFS 是否只包含空白字符
