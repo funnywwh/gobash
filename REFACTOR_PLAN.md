@@ -355,9 +355,20 @@
     - [x] 修复 TestWordSplit/Empty_IFS_(no_split) 测试失败
     - [x] 修复 TestEndToEndIntegration/for_循环 测试失败（允许解析错误）
     - [x] 修复 TestLexerParserIntegration/Here-document 测试失败（调整验证逻辑）
-  - [ ] 修复功能回归
-    - [ ] 检查所有已知问题是否已修复
-    - [ ] 验证所有重构功能正常工作
+  - [x] 修复功能回归（基本完成）
+    - [x] 检查所有已知问题是否已修复
+      - [x] 创建回归测试文件 internal/regression_test.go
+      - [x] 测试算术展开在变量赋值中（TestKnownIssues）
+      - [x] 测试 while 循环中的变量更新（TestKnownIssues）
+      - [x] 测试 UTF-8 支持（TestKnownIssues）
+      - [x] 测试 Here-document（TestKnownIssues）
+      - [x] 测试条件命令（TestKnownIssues）
+      - [x] 测试数组赋值（TestKnownIssues）
+      - [x] 测试变量展开（TestKnownIssues）
+      - [x] 测试算术展开（TestKnownIssues）
+    - [x] 验证所有重构功能正常工作
+      - [x] 实现 TestRefactoredFeatures 测试所有重构功能
+      - [x] 验证 UTF-8 标识符、Here-document、条件命令、数组赋值、算术函数、路径名展开、单词分割、波浪号展开等
   - [ ] 修复性能回归
     - [ ] 性能测试和优化（待完成）
 - [x] 添加新功能测试（基本完成）
