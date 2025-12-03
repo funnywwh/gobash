@@ -2,6 +2,7 @@
 package lexer
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"unicode"
@@ -19,6 +20,7 @@ type Lexer struct {
 	chWidth      int  // 当前字符的字节宽度（UTF-8 支持）
 	line         int  // 当前行号
 	column       int  // 当前列号
+	errors       []*LexerError // 词法分析器错误列表
 }
 
 // New 创建新的词法分析器
@@ -27,6 +29,7 @@ func New(input string) *Lexer {
 		input:  input,
 		line:   1,
 		column: 1,
+		errors: []*LexerError{},
 	}
 	l.readChar()
 	return l
@@ -61,7 +64,10 @@ func (l *Lexer) readChar() {
 	l.position = l.readPosition
 	r, width := utf8.DecodeRuneInString(l.input[l.readPosition:])
 	if r == utf8.RuneError && width == 1 {
-		// 无效的 UTF-8 序列，当作单个字节处理
+		// 无效的 UTF-8 序列，记录错误但继续处理
+		l.addError(LexerErrorTypeInvalidUTF8, fmt.Sprintf("无效的 UTF-8 序列在位置 %d", l.readPosition), 
+			string(l.input[l.readPosition]), l.line, l.column)
+		// 当作单个字节处理
 		l.ch = l.input[l.readPosition]
 		l.chRune = rune(l.ch)
 		l.chWidth = 1
@@ -282,6 +288,8 @@ func (l *Lexer) NextToken() Token {
 	case '=':
 		// = 字符应该已经在标识符读取时处理了（数组赋值 arr=(...)）
 		// 如果单独出现，作为非法字符
+		l.addError(LexerErrorTypeInvalidChar, fmt.Sprintf("无效字符 `%c'", l.ch), 
+			string(l.ch), tok.Line, tok.Column)
 		tok = newToken(ILLEGAL, l.ch, tok.Line, tok.Column)
 	case '\'':
 		tok = l.readString('\'')
@@ -493,6 +501,8 @@ func (l *Lexer) NextToken() Token {
 				tok.Column = l.column
 				return tok
 			}
+			l.addError(LexerErrorTypeInvalidChar, fmt.Sprintf("无效字符 `%c'", l.ch), 
+				string(l.ch), tok.Line, tok.Column)
 			tok = newToken(ILLEGAL, l.ch, tok.Line, tok.Column)
 		}
 	}
@@ -910,6 +920,9 @@ func (l *Lexer) readString(quote byte) Token {
 	} else {
 		// 未闭合的引号
 		result = literal.String()
+		quoteChar := string(quote)
+		l.addError(LexerErrorTypeUnclosedQuote, fmt.Sprintf("未闭合的引号 `%s'", quoteChar), 
+			quoteChar, startLine, startColumn)
 	}
 
 	return Token{
@@ -1413,6 +1426,11 @@ func (l *Lexer) readDollarSingleQuote() Token {
 		}
 	}
 	
+	// 检查是否未闭合
+	if l.ch == 0 {
+		l.addError(LexerErrorTypeUnclosedString, "未闭合的 $'...' 字符串", "'", startLine, startColumn)
+	}
+
 	return Token{
 		Type:    STRING_DOLLAR_SINGLE,
 		Literal: literal.String(),
@@ -1459,6 +1477,11 @@ func (l *Lexer) readDollarDoubleQuote() Token {
 		}
 	}
 	
+	// 检查是否未闭合
+	if l.ch == 0 {
+		l.addError(LexerErrorTypeUnclosedString, "未闭合的 $\"...\" 字符串", "\"", startLine, startColumn)
+	}
+
 	return Token{
 		Type:    STRING_DOLLAR_DOUBLE,
 		Literal: literal.String(),
@@ -1515,6 +1538,28 @@ func (l *Lexer) skipWhitespace() {
 	for l.ch == ' ' || l.ch == '\t' || l.ch == '\r' {
 		l.readChar()
 	}
+}
+
+// addError 添加词法分析器错误
+func (l *Lexer) addError(errType LexerErrorType, message, char string, line, column int) {
+	err := &LexerError{
+		Type:    errType,
+		Message: message,
+		Line:    line,
+		Column:  column,
+		Char:    char,
+	}
+	l.errors = append(l.errors, err)
+}
+
+// Errors 返回词法分析器错误列表
+func (l *Lexer) Errors() []*LexerError {
+	return l.errors
+}
+
+// HasErrors 检查是否有词法分析器错误
+func (l *Lexer) HasErrors() bool {
+	return len(l.errors) > 0
 }
 
 // skipWhitespaceAndNewline 跳过空白字符和换行符

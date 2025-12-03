@@ -203,11 +203,24 @@
         - [x] 实现控制流结束恢复（recoverToControlFlowEnd）
         - [x] 在 ParseProgram 中集成错误恢复机制
         - [x] 添加错误恢复测试用例（TestErrorRecovery, TestRecoverFromUnclosedError）
-      - [ ] 改进错误消息格式（参考 bash 的错误格式）
-    - [ ] 改进词法分析器错误处理
-      - [ ] 添加详细的错误位置信息（行号、列号）
-      - [ ] 添加错误类型分类（语法错误、字符错误等）
-      - [ ] 改进错误消息的可读性
+      - [x] 改进错误消息格式（参考 bash 的错误格式）
+        - [x] 参考 bash 的错误消息格式
+        - [x] 改进 Error() 方法，根据错误类型返回不同格式
+        - [x] 支持未闭合括号、大括号、控制流的错误消息
+        - [x] 支持意外 token、缺少 token 的错误消息
+        - [x] 添加错误消息格式测试用例（TestErrorFormat）
+    - [x] 改进词法分析器错误处理
+      - [x] 添加详细的错误位置信息（行号、列号）
+      - [x] 添加错误类型分类（LexerErrorType：无效字符、未闭合引号、未闭合字符串、无效UTF-8、意外EOF、无效转义）
+      - [x] 改进错误消息的可读性（参考 bash 的错误格式）
+      - [x] 创建 LexerError 结构体和错误类型
+      - [x] 在 Lexer 中添加 errors 字段和 addError 方法
+      - [x] 在 readString 中检测未闭合引号
+      - [x] 在 readDollarSingleQuote 和 readDollarDoubleQuote 中检测未闭合字符串
+      - [x] 在 readChar 中检测无效 UTF-8 序列
+      - [x] 在 ILLEGAL token 生成时添加错误
+      - [x] 添加 Errors() 和 HasErrors() 方法
+      - [x] 添加错误处理测试用例（TestLexerErrorHandling）
     - [ ] 改进执行器错误处理
       - [ ] 统一错误类型和错误消息格式
       - [ ] 添加错误上下文信息（命令、参数等）
