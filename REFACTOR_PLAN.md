@@ -321,13 +321,42 @@
       - [x] `rand()` - 随机数（0-32767）
       - [x] `srand([seed])` - 设置随机数种子
       - [ ] `substr(s, start, length)` - 子字符串（需要字符串支持）
-        - [ ] 需要修改 parseArithmeticFunctionArgs 以支持字符串参数
-        - [ ] 需要修改 parseArithmeticFactor 以识别字符串参数
-        - [ ] 已添加 evaluateArithmeticFunctionWithStrings 函数框架
+        - [x] 已添加 evaluateArithmeticFunctionWithStrings 函数框架
+        - [ ] **任务分解：实现 substr 和 index 函数（独立任务）**
+          - [ ] **子任务 1：分析需求和技术方案**
+            - [ ] 研究 bash 中 substr 和 index 函数的用法
+            - [ ] 分析当前算术表达式解析器的架构
+            - [ ] 设计字符串参数支持方案（通过变量展开或字符串字面量）
+            - [ ] 确定需要修改的代码位置
+          - [ ] **子任务 2：扩展参数解析器以支持字符串参数**
+            - [ ] 修改 parseArithmeticFunctionArgs 以识别字符串参数
+            - [ ] 支持通过变量展开获取字符串（如 `$VAR`）
+            - [ ] 支持字符串字面量（如 `"string"` 或 `'string'`）
+            - [ ] 添加字符串参数解析函数 parseArithmeticStringArg
+            - [ ] 修改参数解析逻辑，区分数字参数和字符串参数
+          - [ ] **子任务 3：修改函数调用逻辑**
+            - [ ] 修改 parseArithmeticFactor 以识别需要字符串参数的函数
+            - [ ] 修改 evaluateArithmeticFunction 以支持字符串参数
+            - [ ] 在函数调用时传递字符串参数和数字参数
+            - [ ] 确保向后兼容（现有函数仍正常工作）
+          - [ ] **子任务 4：实现 substr 函数**
+            - [ ] 完善 evaluateArithmeticFunctionWithStrings 中的 substr 实现
+            - [ ] 处理边界情况（负数索引、超出范围等）
+            - [ ] 确保与 bash 行为一致（索引从 1 开始）
+            - [ ] 添加单元测试
+          - [ ] **子任务 5：实现 index 函数**
+            - [ ] 完善 evaluateArithmeticFunctionWithStrings 中的 index 实现
+            - [ ] 处理边界情况（未找到子字符串等）
+            - [ ] 确保与 bash 行为一致（索引从 1 开始，未找到返回 0）
+            - [ ] 添加单元测试
+          - [ ] **子任务 6：集成测试和文档**
+            - [ ] 添加完整的集成测试用例
+            - [ ] 测试各种使用场景（变量展开、嵌套调用等）
+            - [ ] 更新文档说明新功能
+            - [ ] 确保所有现有测试仍然通过
       - [ ] `index(s, t)` - 查找子字符串位置（需要字符串支持）
-        - [ ] 需要修改 parseArithmeticFunctionArgs 以支持字符串参数
-        - [ ] 需要修改 parseArithmeticFactor 以识别字符串参数
-        - [ ] 已添加 evaluateArithmeticFunctionWithStrings 函数框架
+        - [x] 已添加 evaluateArithmeticFunctionWithStrings 函数框架
+        - [ ] 实现细节见上面的任务分解
     - [x] 改进 parseArithmeticFactor 函数以支持函数调用
     - [x] 添加函数参数解析（支持多个参数）
     - [x] 添加算术函数测试用例
