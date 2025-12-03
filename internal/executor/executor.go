@@ -2639,7 +2639,23 @@ func parseArithmeticFunctionArgs(expr string, pos *int) ([]int64, error) {
 	return args, nil
 }
 
+// ArithmeticArgType 算术函数参数类型
+type ArithmeticArgType int
+
+const (
+	ArithmeticArgTypeNumber ArithmeticArgType = iota // 数字参数
+	ArithmeticArgTypeString                          // 字符串参数
+)
+
+// ArithmeticFunctionArg 算术函数参数
+type ArithmeticFunctionArg struct {
+	Type   ArithmeticArgType // 参数类型
+	Number int64             // 数字值（当 Type == ArithmeticArgTypeNumber 时使用）
+	String string            // 字符串值（当 Type == ArithmeticArgTypeString 时使用）
+}
+
 // evaluateArithmeticFunction 计算算术函数
+// 为了向后兼容，保留接受 []int64 的版本
 func evaluateArithmeticFunction(name string, args []int64) (int64, error) {
 	switch name {
 	case "abs":

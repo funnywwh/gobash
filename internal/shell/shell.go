@@ -125,7 +125,7 @@ func (s *Shell) Run() {
 			}
 
 			lineTrimmed := strings.TrimSpace(line)
-			
+
 			// 如果有未完成的语句，追加当前行
 			if currentStatement.Len() > 0 {
 				currentStatement.WriteString("\n")
@@ -137,7 +137,7 @@ func (s *Shell) Run() {
 			// 检查语句是否完成
 			statement := currentStatement.String()
 			isComplete := s.isStatementComplete(statement)
-			
+
 			// 也检查是否以反斜杠结尾（行继续符）
 			if !isComplete || strings.HasSuffix(lineTrimmed, "\\") {
 				// 语句未完成，继续读取下一行
@@ -193,7 +193,7 @@ func (s *Shell) runSimple() {
 
 			line := scanner.Text()
 			lineTrimmed := strings.TrimSpace(line)
-			
+
 			// 如果有未完成的语句，追加当前行
 			if currentStatement.Len() > 0 {
 				currentStatement.WriteString("\n")
@@ -205,7 +205,7 @@ func (s *Shell) runSimple() {
 			// 检查语句是否完成
 			statement := currentStatement.String()
 			isComplete := s.isStatementComplete(statement)
-			
+
 			// 也检查是否以反斜杠结尾（行继续符）
 			if !isComplete || strings.HasSuffix(lineTrimmed, "\\") {
 				// 语句未完成，继续读取下一行
