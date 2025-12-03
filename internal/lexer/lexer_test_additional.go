@@ -163,3 +163,85 @@ func TestBoundaryCases(t *testing.T) {
 	}
 }
 
+// TestHereDocumentTokens 测试 Here-document token 识别
+func TestHereDocumentTokens(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected []Token
+	}{
+		{
+			// 基本 Here-document
+			input: "cat <<EOF",
+			expected: []Token{
+				{Type: IDENTIFIER, Literal: "cat"},
+				{Type: REDIRECT_HEREDOC, Literal: "<<"},
+				{Type: IDENTIFIER, Literal: "EOF"},
+				{Type: EOF, Literal: ""},
+			},
+		},
+		{
+			// Here-document 带制表符剥离
+			input: "cat <<-EOF",
+			expected: []Token{
+				{Type: IDENTIFIER, Literal: "cat"},
+				{Type: REDIRECT_HEREDOC_STRIP, Literal: "<<-"},
+				{Type: IDENTIFIER, Literal: "EOF"},
+				{Type: EOF, Literal: ""},
+			},
+		},
+		{
+			// Here-document 带单引号分隔符（不展开变量）
+			input: "cat <<'EOF'",
+			expected: []Token{
+				{Type: IDENTIFIER, Literal: "cat"},
+				{Type: REDIRECT_HEREDOC, Literal: "<<"},
+				{Type: STRING_SINGLE, Literal: "EOF"},
+				{Type: EOF, Literal: ""},
+			},
+		},
+		{
+			// Here-document 带双引号分隔符（不展开变量）
+			input: "cat <<\"EOF\"",
+			expected: []Token{
+				{Type: IDENTIFIER, Literal: "cat"},
+				{Type: REDIRECT_HEREDOC, Literal: "<<"},
+				{Type: STRING_DOUBLE, Literal: "EOF"},
+				{Type: EOF, Literal: ""},
+			},
+		},
+		{
+			// Here-document 带制表符剥离和引号
+			input: "cat <<-'EOF'",
+			expected: []Token{
+				{Type: IDENTIFIER, Literal: "cat"},
+				{Type: REDIRECT_HEREDOC_STRIP, Literal: "<<-"},
+				{Type: STRING_SINGLE, Literal: "EOF"},
+				{Type: EOF, Literal: ""},
+			},
+		},
+		{
+			// Here-string (<<<)
+			input: "cat <<<hello",
+			expected: []Token{
+				{Type: IDENTIFIER, Literal: "cat"},
+				{Type: REDIRECT_HEREDOC_TABS, Literal: "<<<"},
+				{Type: IDENTIFIER, Literal: "hello"},
+				{Type: EOF, Literal: ""},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		l := New(tt.input)
+		for i, expected := range tt.expected {
+			tok := l.NextToken()
+			if tok.Type != expected.Type {
+				t.Errorf("测试 '%s' token %d: 类型错误，期望 %v，得到 %v", tt.input, i, expected.Type, tok.Type)
+			}
+			if tok.Literal != expected.Literal {
+				t.Errorf("测试 '%s' token %d: 字面量错误，期望 '%s'，得到 '%s'", tt.input, i, expected.Literal, tok.Literal)
+			}
+		}
+	}
+}
+

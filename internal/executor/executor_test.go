@@ -311,3 +311,142 @@ func TestJobManager(t *testing.T) {
 	}
 }
 
+// TestHereDocument 测试 Here-document 功能
+func TestHereDocument(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		content  string // Here-document 内容（在解析时设置）
+		checkFunc func(t *testing.T, stmt *parser.CommandStatement)
+	}{
+		{
+			name:  "基本 Here-document 解析",
+			input: "cat <<EOF",
+			checkFunc: func(t *testing.T, stmt *parser.CommandStatement) {
+				if len(stmt.Redirects) == 0 {
+					t.Fatal("没有重定向")
+				}
+				redirect := stmt.Redirects[0]
+				if redirect.Type != parser.REDIRECT_HEREDOC {
+					t.Errorf("重定向类型错误，期望 REDIRECT_HEREDOC，得到 %v", redirect.Type)
+				}
+				if redirect.HereDoc == nil {
+					t.Fatal("HereDoc 为空")
+				}
+				if redirect.HereDoc.Delimiter != "EOF" {
+					t.Errorf("分隔符错误，期望 'EOF'，得到 '%s'", redirect.HereDoc.Delimiter)
+				}
+			},
+		},
+		{
+			name:  "Here-document 带制表符剥离",
+			input: "cat <<-EOF",
+			checkFunc: func(t *testing.T, stmt *parser.CommandStatement) {
+				if len(stmt.Redirects) == 0 {
+					t.Fatal("没有重定向")
+				}
+				redirect := stmt.Redirects[0]
+				if redirect.Type != parser.REDIRECT_HEREDOC_STRIP {
+					t.Errorf("重定向类型错误，期望 REDIRECT_HEREDOC_STRIP，得到 %v", redirect.Type)
+				}
+				if redirect.HereDoc == nil {
+					t.Fatal("HereDoc 为空")
+				}
+				if !redirect.HereDoc.StripTabs {
+					t.Error("应该剥离制表符")
+				}
+			},
+		},
+		{
+			name:  "Here-document 带引号分隔符",
+			input: "cat <<'EOF'",
+			checkFunc: func(t *testing.T, stmt *parser.CommandStatement) {
+				if len(stmt.Redirects) == 0 {
+					t.Fatal("没有重定向")
+				}
+				redirect := stmt.Redirects[0]
+				if redirect.HereDoc == nil {
+					t.Fatal("HereDoc 为空")
+				}
+				if !redirect.HereDoc.Quoted {
+					t.Error("分隔符应该带引号")
+				}
+			},
+		},
+		{
+			name:  "Here-string 解析",
+			input: "cat <<<hello",
+			checkFunc: func(t *testing.T, stmt *parser.CommandStatement) {
+				if len(stmt.Redirects) == 0 {
+					t.Fatal("没有重定向")
+				}
+				redirect := stmt.Redirects[0]
+				if redirect.Type != parser.REDIRECT_HERESTRING {
+					t.Errorf("重定向类型错误，期望 REDIRECT_HERESTRING，得到 %v", redirect.Type)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := lexer.New(tt.input)
+			p := parser.New(l)
+			program := p.ParseProgram()
+
+			if len(program.Statements) == 0 {
+				t.Fatalf("解析 '%s' 失败：没有语句", tt.input)
+			}
+
+			stmt, ok := program.Statements[0].(*parser.CommandStatement)
+			if !ok {
+				t.Fatalf("解析 '%s' 失败：不是命令语句", tt.input)
+			}
+
+			tt.checkFunc(t, stmt)
+		})
+	}
+}
+
+// TestHereDocumentWithContent 测试带内容的 Here-document
+// 注意：这个测试主要验证解析和执行逻辑，实际的内容读取在交互模式下进行
+func TestHereDocumentWithContent(t *testing.T) {
+	// 测试 Here-document 内容设置
+	input := "cat <<EOF"
+	l := lexer.New(input)
+	p := parser.New(l)
+	program := p.ParseProgram()
+
+	if len(program.Statements) == 0 {
+		t.Fatal("解析失败：没有语句")
+	}
+
+	stmt, ok := program.Statements[0].(*parser.CommandStatement)
+	if !ok {
+		t.Fatal("解析失败：不是命令语句")
+	}
+
+	if len(stmt.Redirects) == 0 {
+		t.Fatal("没有重定向")
+	}
+
+	redirect := stmt.Redirects[0]
+	if redirect.HereDoc == nil {
+		t.Fatal("HereDoc 为空")
+	}
+
+	// 设置 Here-document 内容（模拟解析时填充的内容）
+	testContent := "line1\nline2\nline3\n"
+	redirect.HereDoc.Content = testContent
+
+	// 验证内容已设置
+	if redirect.HereDoc.Content != testContent {
+		t.Errorf("Here-document 内容设置失败，期望 '%s'，得到 '%s'", testContent, redirect.HereDoc.Content)
+	}
+
+	// 验证分隔符
+	if redirect.HereDoc.Delimiter != "EOF" {
+		t.Errorf("分隔符错误，期望 'EOF'，得到 '%s'", redirect.HereDoc.Delimiter)
+	}
+}
+

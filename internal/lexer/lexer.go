@@ -12,9 +12,11 @@ import (
 // 负责将输入的shell命令字符串分解为一系列token
 type Lexer struct {
 	input        string
-	position     int  // 当前位置
-	readPosition int  // 读取位置
-	ch           byte // 当前字符
+	position     int  // 当前位置（字节位置）
+	readPosition int  // 读取位置（字节位置）
+	ch           byte // 当前字符（ASCII 快速路径）
+	chRune       rune // 当前字符的 rune 值（UTF-8 支持）
+	chWidth      int  // 当前字符的字节宽度（UTF-8 支持）
 	line         int  // 当前行号
 	column       int  // 当前列号
 }
@@ -30,29 +32,83 @@ func New(input string) *Lexer {
 	return l
 }
 
-// readChar 读取下一个字符
+// readChar 读取下一个字符（支持 UTF-8）
 func (l *Lexer) readChar() {
 	if l.readPosition >= len(l.input) {
 		l.ch = 0
-	} else {
-		l.ch = l.input[l.readPosition]
+		l.chRune = 0
+		l.chWidth = 0
+		return
 	}
+	
+	// 快速路径：ASCII 字符（< 128）
+	if l.readPosition < len(l.input) && l.input[l.readPosition] < 128 {
+		l.ch = l.input[l.readPosition]
+		l.chRune = rune(l.ch)
+		l.chWidth = 1
+		l.position = l.readPosition
+		l.readPosition++
+		if l.ch == '\n' {
+			l.line++
+			l.column = 1
+		} else {
+			l.column++
+		}
+		return
+	}
+	
+	// UTF-8 多字节字符路径
 	l.position = l.readPosition
-	l.readPosition++
-	if l.ch == '\n' {
+	r, width := utf8.DecodeRuneInString(l.input[l.readPosition:])
+	if r == utf8.RuneError && width == 1 {
+		// 无效的 UTF-8 序列，当作单个字节处理
+		l.ch = l.input[l.readPosition]
+		l.chRune = rune(l.ch)
+		l.chWidth = 1
+		l.readPosition++
+	} else {
+		// 有效的 UTF-8 字符
+		l.chRune = r
+		l.chWidth = width
+		l.readPosition += width
+		// 对于多字节字符，ch 字段设置为 0（表示不是 ASCII）
+		if r < 128 {
+			l.ch = byte(r)
+		} else {
+			l.ch = 0
+		}
+	}
+	
+	// 更新行号和列号
+	if l.chRune == '\n' {
 		l.line++
 		l.column = 1
 	} else {
+		// 多字节字符的列号只增加 1（按字符计数，不按字节）
 		l.column++
 	}
 }
 
-// peekChar 查看下一个字符但不移动位置
+// peekChar 查看下一个字符但不移动位置（ASCII 快速路径）
 func (l *Lexer) peekChar() byte {
 	if l.readPosition >= len(l.input) {
 		return 0
 	}
-	return l.input[l.readPosition]
+	// 快速路径：ASCII 字符
+	if l.input[l.readPosition] < 128 {
+		return l.input[l.readPosition]
+	}
+	// 多字节字符返回 0（表示不是 ASCII）
+	return 0
+}
+
+// peekCharRune 查看下一个 rune 但不移动位置（UTF-8 支持）
+func (l *Lexer) peekCharRune() rune {
+	if l.readPosition >= len(l.input) {
+		return 0
+	}
+	r, _ := utf8.DecodeRuneInString(l.input[l.readPosition:])
+	return r
 }
 
 // peekChar2 查看下下个字符
@@ -295,15 +351,38 @@ func (l *Lexer) NextToken() Token {
 			tok = l.readVariable()
 		}
 	case 0:
-		tok.Literal = ""
-		tok.Type = EOF
-		tok.Line = l.line
-		tok.Column = l.column
+		// 检查是否真的到达文件末尾（chRune 也为 0）
+		// 如果 chRune 不为 0，说明是多字节字符，应该进入 default 分支处理
+		if l.chRune == 0 {
+			tok.Literal = ""
+			tok.Type = EOF
+			tok.Line = l.line
+			tok.Column = l.column
+		} else {
+			// 多字节字符，进入 default 分支处理
+			// 这里不返回，让代码继续到 default 分支
+			if unicode.IsLetter(l.chRune) || l.chRune == '_' {
+				ident := l.readIdentifier()
+				tok.Literal = ident
+				tok.Type = LookupIdent(ident)
+				tok.Line = l.line
+				tok.Column = l.column
+				return tok
+			} else {
+				// 其他多字节字符作为路径的一部分
+				tok.Literal = l.readIdentifierOrPath()
+				tok.Type = IDENTIFIER
+				tok.Line = l.line
+				tok.Column = l.column
+				return tok
+			}
+		}
 	case '\n':
 		// 普通换行符（转义的换行符已经在反斜杠处理中被处理）
 		tok = newToken(NEWLINE, l.ch, tok.Line, tok.Column)
 	default:
-		if isLetter(l.ch) || l.ch == '_' {
+		// 支持 UTF-8：使用 chRune 检查字母（包括多字节字符）
+		if unicode.IsLetter(l.chRune) || l.chRune == '_' {
 			// 先尝试读取标识符，但检查是否包含点号（文件名）
 			ident := l.readIdentifier()
 			// 如果下一个字符是点号，继续读取（可能是文件名）
@@ -376,7 +455,18 @@ func (l *Lexer) NextToken() Token {
 			return tok
 		} else {
 			// 其他字符作为标识符的一部分（如路径中的/或.）
-			if l.ch != 0 {
+			// 支持多字节字符（UTF-8）
+			if l.chRune != 0 {
+				// 检查是否是字母或数字（多字节字符）
+				if unicode.IsLetter(l.chRune) || unicode.IsDigit(l.chRune) {
+					// 多字节字符的标识符
+					tok.Literal = l.readIdentifier()
+					tok.Type = IDENTIFIER
+					tok.Line = l.line
+					tok.Column = l.column
+					return tok
+				}
+				// 其他多字节字符作为路径的一部分
 				tok.Literal = l.readIdentifierOrPath()
 				tok.Type = IDENTIFIER
 				tok.Line = l.line
@@ -401,41 +491,92 @@ func newToken(tokenType TokenType, ch byte, line, column int) Token {
 	}
 }
 
-// readIdentifier 读取标识符
+// readIdentifier 读取标识符（支持 UTF-8）
 func (l *Lexer) readIdentifier() string {
 	position := l.position
-	for isLetter(l.ch) || isDigit(l.ch) || l.ch == '_' {
-		l.readChar()
+	for {
+		// 使用 chRune 检查多字节字符
+		if unicode.IsLetter(l.chRune) || unicode.IsDigit(l.chRune) || l.chRune == '_' {
+			// 在调用 readChar() 之前，保存当前字符的结束位置
+			// readChar() 会更新 l.position 和 l.readPosition
+			// 我们需要在 readChar() 之前保存 l.readPosition，因为它是当前字符的结束位置
+			nextPosition := l.readPosition
+			if l.chWidth > 0 {
+				nextPosition = l.position + l.chWidth
+			}
+			l.readChar()
+			// 检查下一个字符是否匹配
+			if !(unicode.IsLetter(l.chRune) || unicode.IsDigit(l.chRune) || l.chRune == '_') {
+				// 下一个字符不匹配，使用之前保存的位置作为结束位置
+				return l.input[position:nextPosition]
+			}
+		} else {
+			break
+		}
 	}
+	// 当字符不匹配时，l.position 指向当前字符的开始位置（不匹配的字符）
+	// 这就是最后一个匹配字符的结束位置
 	return l.input[position:l.position]
 }
 
-// readIdentifierOrPath 读取标识符或路径（包含特殊字符如点号、斜杠）
+// readIdentifierOrPath 读取标识符或路径（包含特殊字符如点号、斜杠，支持 UTF-8）
 func (l *Lexer) readIdentifierOrPath() string {
 	position := l.position
-	for l.ch != 0 && 
-		l.ch != ' ' && 
-		l.ch != '\t' && 
-		l.ch != '\n' &&
-		l.ch != '\r' &&
-		l.ch != '|' &&
-		l.ch != '>' &&
-		l.ch != '<' &&
-		l.ch != '&' &&
-		l.ch != ';' &&
-		l.ch != '(' &&
-		l.ch != ')' &&
-		l.ch != '{' &&
-		l.ch != '}' &&
-		l.ch != '[' &&
-		l.ch != ']' &&
-		l.ch != '$' &&
-		l.ch != '\'' &&
-		l.ch != '"' &&
-		l.ch != '`' &&
-		l.ch != '=' { // 停止在 = 处，以便识别数组赋值
+	for l.chRune != 0 {
+		// 检查是否是分隔符（使用 rune 比较以支持多字节字符）
+		if l.chRune == ' ' || 
+			l.chRune == '\t' || 
+			l.chRune == '\n' ||
+			l.chRune == '\r' ||
+			l.chRune == '|' ||
+			l.chRune == '>' ||
+			l.chRune == '<' ||
+			l.chRune == '&' ||
+			l.chRune == ';' ||
+			l.chRune == '(' ||
+			l.chRune == ')' ||
+			l.chRune == '{' ||
+			l.chRune == '}' ||
+			l.chRune == '[' ||
+			l.chRune == ']' ||
+			l.chRune == '$' ||
+			l.chRune == '\'' ||
+			l.chRune == '"' ||
+			l.chRune == '`' ||
+			l.chRune == '=' { // 停止在 = 处，以便识别数组赋值
+			break
+		}
+		// 保存当前字符的结束位置
+		currentEnd := l.readPosition
 		l.readChar()
+		// 检查下一个字符是否是分隔符
+		if l.chRune == 0 || 
+			l.chRune == ' ' || 
+			l.chRune == '\t' || 
+			l.chRune == '\n' ||
+			l.chRune == '\r' ||
+			l.chRune == '|' ||
+			l.chRune == '>' ||
+			l.chRune == '<' ||
+			l.chRune == '&' ||
+			l.chRune == ';' ||
+			l.chRune == '(' ||
+			l.chRune == ')' ||
+			l.chRune == '{' ||
+			l.chRune == '}' ||
+			l.chRune == '[' ||
+			l.chRune == ']' ||
+			l.chRune == '$' ||
+			l.chRune == '\'' ||
+			l.chRune == '"' ||
+			l.chRune == '`' ||
+			l.chRune == '=' {
+			// 下一个字符是分隔符，使用之前保存的结束位置
+			return l.input[position:currentEnd]
+		}
 	}
+	// 当字符不匹配时，l.position 指向当前字符的开始位置（不匹配的字符）
+	// 这就是最后一个匹配字符的结束位置
 	return l.input[position:l.position]
 }
 
@@ -603,12 +744,30 @@ func (l *Lexer) readVariable() Token {
 		}
 		// 如果没有找到匹配的 }，返回错误
 		return Token{Type: ILLEGAL, Literal: "${", Line: startLine, Column: startColumn}
-	} else if isLetter(l.ch) || l.ch == '_' {
-		// $VAR 格式
+	} else if unicode.IsLetter(l.chRune) || l.chRune == '_' {
+		// $VAR 格式（支持 UTF-8）
 		position := l.position
-		for isLetter(l.ch) || isDigit(l.ch) || l.ch == '_' {
-			l.readChar()
+		for {
+			if unicode.IsLetter(l.chRune) || unicode.IsDigit(l.chRune) || l.chRune == '_' {
+				// 保存当前字符的结束位置
+				currentEnd := l.readPosition
+				l.readChar()
+				// 检查下一个字符是否匹配
+				if !(unicode.IsLetter(l.chRune) || unicode.IsDigit(l.chRune) || l.chRune == '_') {
+					// 下一个字符不匹配，使用之前保存的结束位置
+					return Token{
+						Type:    VAR,
+						Literal: l.input[position:currentEnd],
+						Line:    startLine,
+						Column:  startColumn,
+					}
+				}
+			} else {
+				break
+			}
 		}
+		// 当字符不匹配时，l.position 指向当前字符的开始位置（不匹配的字符）
+		// 这就是最后一个匹配字符的结束位置
 		return Token{
 			Type:    VAR,
 			Literal: l.input[position:l.position],
@@ -656,15 +815,16 @@ func (l *Lexer) readRedirectFD() Token {
 	return Token{Type: ILLEGAL, Literal: fd, Line: startLine, Column: startColumn}
 }
 
-// readString 读取字符串（单引号、双引号或反引号）
+// readString 读取字符串（单引号、双引号或反引号，支持 UTF-8）
 func (l *Lexer) readString(quote byte) Token {
 	startLine := l.line
 	startColumn := l.column
+	quoteRune := rune(quote) // 将引号转换为 rune 以支持多字节引号字符
 	l.readChar() // 跳过开始的引号
 
 	var literal strings.Builder
 	
-	for l.ch != 0 {
+	for l.chRune != 0 {
 		if quote == '"' && l.ch == '\\' {
 			// 双引号内的转义处理
 			nextPos := l.readPosition
@@ -692,8 +852,9 @@ func (l *Lexer) readString(quote byte) Token {
 					// 其他转义序列保持原样（\$、\t等）
 					literal.WriteByte(l.ch) // 写入 \
 					l.readChar()
-					if l.ch != 0 && l.ch != quote {
-						literal.WriteByte(l.ch) // 写入转义字符
+					if l.chRune != 0 && l.chRune != quoteRune {
+						// 使用 WriteRune 支持多字节字符
+						literal.WriteRune(l.chRune)
 						l.readChar()
 					}
 					continue
@@ -701,18 +862,20 @@ func (l *Lexer) readString(quote byte) Token {
 			}
 		}
 		
-		if l.ch == quote {
+		// 检查是否匹配结束引号（使用 rune 比较以支持多字节字符）
+		if l.chRune == quoteRune {
 			// 找到结束引号
 			break
 		}
 		
-		// 普通字符（包括空白字符，引号内的空白字符应该被保留）
-		literal.WriteByte(l.ch)
+		// 普通字符（包括空白字符和多字节字符，引号内的空白字符应该被保留）
+		// 使用 WriteRune 支持多字节字符
+		literal.WriteRune(l.chRune)
 		l.readChar()
 	}
 
 	var result string
-	if l.ch == quote {
+	if l.chRune == quoteRune {
 		result = literal.String()
 		l.readChar() // 跳过结束引号
 	} else {

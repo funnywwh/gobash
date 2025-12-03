@@ -252,11 +252,91 @@ func TestEscapedNewline(t *testing.T) {
 }
 
 // TestUTF8Support 测试 UTF-8 多字节字符支持
-// 注意：此测试当前被跳过，因为 UTF-8 支持尚未完全实现
-// TODO: 实现完整的 UTF-8 支持后启用此测试
 func TestUTF8Support(t *testing.T) {
-	t.Skip("UTF-8 支持尚未完全实现，跳过测试")
-	// 测试用例将在 UTF-8 支持完全实现后添加
+	tests := []struct {
+		name     string
+		input    string
+		expected []Token
+	}{
+		{
+			name:  "中文变量名",
+			input: "echo $中文变量",
+			expected: []Token{
+				{Type: IDENTIFIER, Literal: "echo"},
+				{Type: VAR, Literal: "中文变量"},
+				{Type: EOF, Literal: ""},
+			},
+		},
+		{
+			name:  "包含中文的引号字符串",
+			input: "echo '你好世界'",
+			expected: []Token{
+				{Type: IDENTIFIER, Literal: "echo"},
+				{Type: STRING_SINGLE, Literal: "你好世界"},
+				{Type: EOF, Literal: ""},
+			},
+		},
+		{
+			name:  "包含中文的双引号字符串",
+			input: "echo \"你好世界\"",
+			expected: []Token{
+				{Type: IDENTIFIER, Literal: "echo"},
+				{Type: STRING_DOUBLE, Literal: "你好世界"},
+				{Type: EOF, Literal: ""},
+			},
+		},
+		{
+			name:  "日文变量名",
+			input: "echo $日本語変数",
+			expected: []Token{
+				{Type: IDENTIFIER, Literal: "echo"},
+				{Type: VAR, Literal: "日本語変数"},
+				{Type: EOF, Literal: ""},
+			},
+		},
+		{
+			name:  "多字节字符的路径",
+			input: "cd /tmp/测试目录",
+			expected: []Token{
+				{Type: IDENTIFIER, Literal: "cd"},
+				{Type: IDENTIFIER, Literal: "/tmp/测试目录"},
+				{Type: EOF, Literal: ""},
+			},
+		},
+		{
+			name:  "中文标识符",
+			input: "中文命令 参数",
+			expected: []Token{
+				{Type: IDENTIFIER, Literal: "中文命令"},
+				{Type: IDENTIFIER, Literal: "参数"},
+				{Type: EOF, Literal: ""},
+			},
+		},
+		{
+			name:  "混合中英文",
+			input: "echo $USER中文",
+			expected: []Token{
+				{Type: IDENTIFIER, Literal: "echo"},
+				{Type: VAR, Literal: "USER中文"},
+				{Type: EOF, Literal: ""},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			l := New(tt.input)
+			for i, expected := range tt.expected {
+				tok := l.NextToken()
+				if tok.Type != expected.Type {
+					t.Errorf("测试 '%s' token %d: 类型错误，期望 %v，得到 %v", tt.input, i, expected.Type, tok.Type)
+				}
+				if tok.Literal != expected.Literal {
+					t.Errorf("测试 '%s' token %d: 字面量错误，期望 '%s'，得到 '%s'", tt.input, i, expected.Literal, tok.Literal)
+				}
+			}
+		})
+	}
 }
 
 func TestNestedArithmeticExpansion(t *testing.T) {
