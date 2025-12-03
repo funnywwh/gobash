@@ -360,10 +360,20 @@
     - [ ] 验证所有重构功能正常工作
   - [ ] 修复性能回归
     - [ ] 性能测试和优化（待完成）
-- [ ] 添加新功能测试
-  - [ ] 为新功能添加测试用例
-  - [ ] 添加兼容性测试
-  - [ ] 添加性能测试
+- [x] 添加新功能测试（基本完成）
+  - [x] 为新功能添加测试用例
+    - [x] UTF-8 支持测试（TestUTF8Support）
+    - [x] Here-document 测试（TestHereDocument, TestHereDocumentWithContent）
+    - [x] 条件命令测试（TestDoubleBracketCommand）
+    - [x] 数组赋值测试（TestArrayAssignment）
+    - [x] 算术函数测试（TestArithmeticFunctions）
+    - [x] 路径名展开测试（TestPathnameExpand）
+    - [x] 单词分割测试（TestWordSplit）
+    - [x] 波浪号展开测试（TestTildeExpand）
+    - [x] 集成测试（TestLexerParserIntegration, TestParserExecutorIntegration, TestVariableExpansionIntegration, TestEndToEndIntegration）
+    - [x] 脚本测试（TestScriptParsing, TestScriptExecution）
+  - [ ] 添加兼容性测试（待完成）
+  - [ ] 添加性能测试（待完成）
 - [ ] 性能优化
   - [ ] 分析性能瓶颈
   - [ ] 优化关键路径
