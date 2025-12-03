@@ -298,6 +298,26 @@ func (l *Lexer) NextToken() Token {
 			// 行尾的反斜杠，跳过反斜杠和换行符（多行命令）
 			l.readChar() // 跳过反斜杠
 			l.readChar() // 跳过换行符
+			// 跳过反斜杠后的空白字符（空格、制表符等）
+			// 注意：不跳过换行符，因为已经跳过了
+			for l.ch == ' ' || l.ch == '\t' || l.ch == '\r' {
+				l.readChar()
+			}
+			// 如果下一个字符是 #，跳过注释行
+			if l.ch == '#' {
+				// 跳过整行注释（直到下一个换行符或EOF）
+				for l.ch != '\n' && l.ch != 0 {
+					l.readChar()
+				}
+				// 如果还有换行符，跳过它
+				if l.ch == '\n' {
+					l.readChar()
+				}
+				// 跳过注释后的空白字符
+				for l.ch == ' ' || l.ch == '\t' || l.ch == '\r' {
+					l.readChar()
+				}
+			}
 			// 继续读取下一个 token
 			return l.NextToken()
 		}
