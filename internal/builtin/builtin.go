@@ -201,8 +201,19 @@ func export(args []string, env map[string]string) error {
 	for _, arg := range args {
 		parts := strings.SplitN(arg, "=", 2)
 		if len(parts) == 2 {
-			env[parts[0]] = parts[1]
-			os.Setenv(parts[0], parts[1])
+			key := parts[0]
+			value := parts[1]
+			
+			// 移除引号（如果有）
+			if len(value) >= 2 {
+				if (value[0] == '"' && value[len(value)-1] == '"') ||
+					(value[0] == '\'' && value[len(value)-1] == '\'') {
+					value = value[1 : len(value)-1]
+				}
+			}
+			
+			env[key] = value
+			os.Setenv(key, value)
 		} else {
 			// 只设置变量名，使用现有值
 			if value, ok := env[arg]; ok {
