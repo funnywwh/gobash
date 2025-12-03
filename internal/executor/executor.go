@@ -378,10 +378,8 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 	err := e.executeExternalCommand(cmd)
 	// 如果设置了 -e 选项且命令失败，输出错误信息后退出
 	if err != nil && e.options["e"] {
-		// 输出错误信息到 stderr（如果还没有输出）
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "gobash: %v\n", err)
-		}
+		// 输出错误信息到 stderr
+		fmt.Fprintf(os.Stderr, "gobash: %v\n", err)
 		os.Exit(1)
 	}
 	return err
@@ -1606,31 +1604,38 @@ func (e *Executor) expandVariablesInString(s string) string {
 				// 找到匹配的 ))
 				i += 3 // 跳过 $((
 				startPos := i
-				depth := 1
-				for i < len(s) && depth > 0 {
-					if i+1 < len(s) && s[i] == ')' && s[i+1] == ')' {
-						depth--
-						if depth == 0 {
+				parenDepth := 0 // 单括号深度
+				for i < len(s) {
+					if s[i] == '(' {
+						parenDepth++
+						i++
+					} else if s[i] == ')' {
+						if parenDepth > 0 {
+							// 这个 ) 匹配一个普通的 (
+							parenDepth--
+							i++
+						} else {
+							// parenDepth == 0，这可能是算术展开的第一个 )
+							if i+1 < len(s) && s[i+1] == ')' {
+							// 找到 ))，这是算术展开的结束
 							// 提取算术表达式
 							expr := s[startPos:i]
 							// 计算算术表达式
 							result.WriteString(e.evaluateArithmetic(expr))
-							i += 2 // 跳过 ))
-							continue
-						} else {
-							i += 2
+								i += 2 // 跳过 ))
+								break
+							} else {
+								// 只有一个 )，这是一个错误（括号不匹配）
+								// 保留原样
+								result.WriteString("$((")
+								result.WriteString(s[startPos:i+1])
+								i++
+								break
+							}
 						}
-					} else if i+1 < len(s) && s[i] == '(' && s[i+1] == '(' {
-						depth++
-						i += 2
 					} else {
 						i++
 					}
-				}
-				if depth > 0 {
-					// 括号不匹配，保留原样
-					result.WriteString("$((")
-					i = startPos
 				}
 				continue
 			}
@@ -2071,8 +2076,9 @@ func (e *Executor) evaluateArithmetic(expr string) string {
 		return "0"
 	}
 
-	// 展开变量
-	expr = e.expandVariablesInString(expr)
+	// 展开变量（但保留引号，因为字符串字面量需要引号）
+	// 我们需要一个特殊的展开函数，它只展开变量，但保留引号
+	expr = e.expandVariablesInArithmeticExpression(expr)
 
 	// 简单的算术表达式求值
 	// 支持: +, -, *, /, %, (, )
@@ -2084,6 +2090,98 @@ func (e *Executor) evaluateArithmetic(expr string) string {
 	}
 
 	return fmt.Sprintf("%d", result)
+}
+
+// expandVariablesInArithmeticExpression 在算术表达式中展开变量，但保留引号
+// 这个函数专门用于算术表达式，它只展开 $VAR 格式的变量，但保留字符串字面量的引号
+func (e *Executor) expandVariablesInArithmeticExpression(s string) string {
+	if len(s) == 0 {
+		return ""
+	}
+
+	var result strings.Builder
+	i := 0
+	for i < len(s) {
+		// 如果遇到引号，跳过整个引号字符串（不展开其中的变量）
+		if s[i] == '\'' || s[i] == '"' {
+			quote := s[i]
+			result.WriteByte(quote) // 保留引号
+			i++
+			// 跳过引号内的内容
+			for i < len(s) && s[i] != quote {
+				if s[i] == '\\' && i+1 < len(s) {
+					// 处理转义字符
+					result.WriteByte(s[i])
+					result.WriteByte(s[i+1])
+					i += 2
+				} else {
+					result.WriteByte(s[i])
+					i++
+				}
+			}
+			if i < len(s) {
+				result.WriteByte(quote) // 保留结束引号
+				i++
+			}
+			continue
+		}
+
+		// 处理变量展开 $VAR
+		if s[i] == '$' && i+1 < len(s) {
+			// 检查是否是 $VAR 格式（不是 $((...))）
+			if i+2 < len(s) && s[i+1] == '(' && s[i+2] == '(' {
+				// $((...)) 格式，保留原样（不应该在这里出现，因为这是递归调用）
+				result.WriteByte(s[i])
+				i++
+				continue
+			}
+
+			// 展开变量
+			varName := ""
+			if i+1 < len(s) && s[i+1] == '{' {
+				// ${VAR} 格式
+				i += 2 // 跳过 ${
+				start := i
+				for i < len(s) && s[i] != '}' {
+					i++
+				}
+				if i < len(s) {
+					varName = s[start:i]
+					i++ // 跳过 }
+				}
+			} else if i+1 < len(s) {
+				// $VAR 格式
+				start := i + 1
+				for i+1 < len(s) && ((s[i+1] >= 'a' && s[i+1] <= 'z') ||
+					(s[i+1] >= 'A' && s[i+1] <= 'Z') ||
+					(s[i+1] >= '0' && s[i+1] <= '9') ||
+					s[i+1] == '_') {
+					i++
+				}
+				varName = s[start : i+1]
+				i++
+			}
+
+			if varName != "" {
+				// 获取变量值
+				varValue := e.env[varName]
+				if varValue == "" {
+					varValue = os.Getenv(varName)
+				}
+				result.WriteString(varValue)
+			} else {
+				result.WriteByte(s[i])
+				i++
+			}
+			continue
+		}
+
+		// 其他字符直接输出
+		result.WriteByte(s[i])
+		i++
+	}
+
+	return result.String()
 }
 
 // evaluateArithmeticExpression 计算算术表达式
