@@ -54,11 +54,18 @@ echo $((index($VAR, "ll")))   # 输出 3（从 1 开始）
 5. 编写技术方案文档
 
 **验收标准**：
-- [ ] 完成技术方案文档
-- [ ] 确定所有需要修改的函数和数据结构
-- [ ] 确定向后兼容性方案
+- [x] 完成技术方案文档（TECH_DESIGN_SUBSTR_INDEX.md）
+- [x] 确定所有需要修改的函数和数据结构
+- [x] 确定向后兼容性方案
 
 **预计工作量**：1-2 小时
+
+**完成情况**：
+- ✅ 已完成技术方案文档 TECH_DESIGN_SUBSTR_INDEX.md
+- ✅ 确定了数据结构设计（ArithmeticArgType, ArithmeticFunctionArg）
+- ✅ 确定了需要修改的函数（parseArithmeticFunctionArgs, parseArithmeticFactor, evaluateArithmeticFunction）
+- ✅ 确定了实现方案（方案 A + 方案 C 的混合方案）
+- ✅ 确定了向后兼容性方案（保持现有函数逻辑不变）
 
 ---
 
