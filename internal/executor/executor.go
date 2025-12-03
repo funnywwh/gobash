@@ -2168,8 +2168,6 @@ func (e *Executor) expandVariablesInArithmeticExpression(s string) string {
 				if varValue == "" {
 					varValue = os.Getenv(varName)
 				}
-				// 调试：输出变量读取（临时）
-				fmt.Fprintf(os.Stderr, "expandVariablesInArithmeticExpression: varName=%q, env[%s]=%q, os.Getenv=%q, result=%q\n", varName, varName, e.env[varName], os.Getenv(varName), varValue)
 				result.WriteString(varValue)
 			} else {
 				result.WriteByte(s[i])
