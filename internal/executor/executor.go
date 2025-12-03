@@ -1617,18 +1617,18 @@ func (e *Executor) expandVariablesInString(s string) string {
 						} else {
 							// parenDepth == 0，这可能是算术展开的第一个 )
 							if i+1 < len(s) && s[i+1] == ')' {
-							// 找到 ))，这是算术展开的结束
-							// 提取算术表达式
-							expr := s[startPos:i]
-							// 计算算术表达式
-							result.WriteString(e.evaluateArithmetic(expr))
+								// 找到 ))，这是算术展开的结束
+								// 提取算术表达式
+								expr := s[startPos:i]
+								// 计算算术表达式
+								result.WriteString(e.evaluateArithmetic(expr))
 								i += 2 // 跳过 ))
 								break
 							} else {
 								// 只有一个 )，这是一个错误（括号不匹配）
 								// 保留原样
 								result.WriteString("$((")
-								result.WriteString(s[startPos:i+1])
+								result.WriteString(s[startPos : i+1])
 								i++
 								break
 							}

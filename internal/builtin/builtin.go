@@ -198,9 +198,17 @@ func export(args []string, env map[string]string) error {
 		return nil
 	}
 
-	for _, arg := range args {
+	// 处理参数，支持两种格式：
+	// 1. export VAR=value（一个参数）
+	// 2. export VAR value（两个参数，当 parser 将 VAR='value' 解析为两个参数时）
+	i := 0
+	for i < len(args) {
+		arg := args[i]
+		
+		// 检查是否包含 = 号
 		parts := strings.SplitN(arg, "=", 2)
 		if len(parts) == 2 {
+			// 格式：VAR=value
 			key := parts[0]
 			value := parts[1]
 			
@@ -214,11 +222,39 @@ func export(args []string, env map[string]string) error {
 			
 			env[key] = value
 			os.Setenv(key, value)
+			i++
 		} else {
-			// 只设置变量名，使用现有值
-			if value, ok := env[arg]; ok {
-				os.Setenv(arg, value)
+			// 格式：VAR 或 VAR value
+			key := arg
+			var value string
+			
+			// 检查是否有下一个参数作为值
+			if i+1 < len(args) {
+				// 下一个参数可能是值（当 parser 将 VAR='value' 解析为两个参数时）
+				nextArg := args[i+1]
+				// 检查下一个参数是否看起来像值（不是变量名格式）
+				// 如果下一个参数不包含 = 且不是纯变量名，则将其作为值
+				if !strings.Contains(nextArg, "=") {
+					value = nextArg
+					// 移除引号（如果有）
+					if len(value) >= 2 {
+						if (value[0] == '"' && value[len(value)-1] == '"') ||
+							(value[0] == '\'' && value[len(value)-1] == '\'') {
+							value = value[1 : len(value)-1]
+						}
+					}
+					env[key] = value
+					os.Setenv(key, value)
+					i += 2
+					continue
+				}
 			}
+			
+			// 只设置变量名，使用现有值
+			if existingValue, ok := env[key]; ok {
+				os.Setenv(key, existingValue)
+			}
+			i++
 		}
 	}
 
