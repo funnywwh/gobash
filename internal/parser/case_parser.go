@@ -202,6 +202,9 @@ func (p *Parser) parseCaseStatement() *CaseStatement {
 	
 	if p.curToken.Type == lexer.ESAC {
 		p.nextToken() // 跳过 esac
+	} else if p.curToken.Type != lexer.EOF {
+		// 未闭合的 case 语句
+		p.addError(ErrorTypeUnclosedControlFlow, "case 语句未闭合，缺少 esac", p.curToken, "esac")
 	}
 	
 	return stmt

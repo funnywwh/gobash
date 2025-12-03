@@ -12,7 +12,8 @@ import (
 // 负责将token序列解析为抽象语法树（AST），支持shell的各种语法结构
 type Parser struct {
 	l      *lexer.Lexer
-	errors []string
+	errors []string // 保持向后兼容，存储错误消息字符串
+	parseErrors []*ParseError // 新的结构化错误列表
 
 	curToken  lexer.Token
 	peekToken lexer.Token
@@ -24,8 +25,9 @@ type Parser struct {
 // New 创建新的解析器
 func New(l *lexer.Lexer) *Parser {
 	p := &Parser{
-		l:      l,
-		errors: []string{},
+		l:           l,
+		errors:      []string{},
+		parseErrors: []*ParseError{},
 	}
 
 	// 读取两个token，设置curToken和peekToken
@@ -833,6 +835,9 @@ func (p *Parser) parseIfStatement() *IfStatement {
 		p.nextToken() // 跳过 fi
 	} else if p.peekToken.Type == lexer.FI {
 		p.nextToken() // 跳过 fi
+	} else if p.curToken.Type != lexer.EOF {
+		// 未闭合的 if 语句
+		p.addError(ErrorTypeUnclosedControlFlow, "if 语句未闭合，缺少 fi", p.curToken, "fi")
 	}
 
 	return stmt
@@ -869,6 +874,9 @@ func (p *Parser) parseForStatement() *ForStatement {
 
 	if p.peekToken.Type == lexer.DONE {
 		p.nextToken() // 跳过 done
+	} else if p.curToken.Type != lexer.EOF {
+		// 未闭合的 for 循环
+		p.addError(ErrorTypeUnclosedControlFlow, "for 循环未闭合，缺少 done", p.curToken, "done")
 	}
 
 	return stmt
@@ -926,6 +934,9 @@ func (p *Parser) parseWhileStatement() *WhileStatement {
 		p.nextToken() // 跳过 done
 	} else if p.peekToken.Type == lexer.DONE {
 		p.nextToken() // 跳过 done
+	} else if p.curToken.Type != lexer.EOF {
+		// 未闭合的 while 循环
+		p.addError(ErrorTypeUnclosedControlFlow, "while 循环未闭合，缺少 done", p.curToken, "done")
 	}
 
 	return stmt
@@ -1095,6 +1106,9 @@ func (p *Parser) parseSubshell() *SubshellCommand {
 	// 检查并跳过 )
 	if p.curToken.Type == lexer.RPAREN {
 		p.nextToken()
+	} else if p.curToken.Type != lexer.EOF {
+		// 未闭合的括号
+		p.addError(ErrorTypeUnclosedParen, "未闭合的括号", p.curToken, ")")
 	}
 	
 	return stmt
@@ -1112,14 +1126,27 @@ func (p *Parser) parseGroupCommand() *GroupCommand {
 	// 检查并跳过 }
 	if p.curToken.Type == lexer.RBRACE {
 		p.nextToken()
+	} else if p.curToken.Type != lexer.EOF {
+		// 未闭合的大括号
+		p.addError(ErrorTypeUnclosedBrace, "未闭合的大括号", p.curToken, "}")
 	}
 	
 	return stmt
 }
 
-// Errors 返回解析错误
+// Errors 返回解析错误（字符串列表，保持向后兼容）
 func (p *Parser) Errors() []string {
 	return p.errors
+}
+
+// ParseErrors 返回结构化解析错误列表
+func (p *Parser) ParseErrors() []*ParseError {
+	return p.parseErrors
+}
+
+// HasErrors 检查是否有解析错误
+func (p *Parser) HasErrors() bool {
+	return len(p.errors) > 0 || len(p.parseErrors) > 0
 }
 
 
