@@ -243,8 +243,11 @@ func export(args []string, env map[string]string) error {
 							value = value[1 : len(value)-1]
 						}
 					}
+					// 调试：输出设置的变量（临时）
+					fmt.Fprintf(os.Stderr, "export setting (two args): %s=%q (env[%s]=%q, os.Getenv=%q)\n", key, value, key, env[key], os.Getenv(key))
 					env[key] = value
 					os.Setenv(key, value)
+					fmt.Fprintf(os.Stderr, "export after setting: env[%s]=%q, os.Getenv=%q\n", key, env[key], os.Getenv(key))
 					i += 2
 					continue
 				}
