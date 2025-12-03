@@ -2752,6 +2752,37 @@ func parseArithmeticStringArg(expr string, pos *int, e *Executor) (string, error
 		return varValue, nil
 	}
 
+	// 如果既不是引号也不是 $，可能是已经展开的变量值（字符串字面量）
+	// 尝试读取直到遇到逗号、右括号或运算符
+	// 注意：这需要小心处理，因为可能会误识别数字或其他值
+	// 但在这个上下文中，如果我们需要字符串参数，那么这应该是字符串
+	if !isDigitArith(expr[*pos]) && expr[*pos] != '-' && expr[*pos] != '+' {
+		// 读取字符串直到遇到分隔符
+		start := *pos
+		for *pos < len(expr) {
+			ch := expr[*pos]
+			// 遇到分隔符时停止
+			if ch == ',' || ch == ')' || ch == ' ' || ch == '\t' {
+				break
+			}
+			// 遇到运算符时停止（但要注意不要误识别负号）
+			if ch == '+' || ch == '-' || ch == '*' || ch == '/' || ch == '%' ||
+				ch == '<' || ch == '>' || ch == '=' || ch == '!' || ch == '&' || ch == '|' {
+				// 检查是否是运算符的开始（需要更多上下文）
+				if ch == '-' && *pos == start {
+					// 可能是负数，继续读取
+					*pos++
+					continue
+				}
+				break
+			}
+			*pos++
+		}
+		if *pos > start {
+			return expr[start:*pos], nil
+		}
+	}
+
 	return "", fmt.Errorf("expected string argument (variable or string literal) at position %d", *pos)
 }
 
