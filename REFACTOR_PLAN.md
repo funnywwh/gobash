@@ -339,7 +339,9 @@
     - [x] 验证简单命令、变量赋值、if 语句、for 循环、多行语句等
 - [x] 运行现有测试，确保兼容性
   - [x] 运行所有单元测试（词法分析器、语法分析器、执行器测试通过）
-  - [ ] 运行集成测试（待添加）
+  - [x] 运行集成测试（已完成）
+    - [x] 创建集成测试文件 internal/integration_test.go
+    - [x] 实现 TestLexerParserIntegration、TestParserExecutorIntegration、TestVariableExpansionIntegration、TestEndToEndIntegration
   - [x] 运行脚本测试（已完成）
     - [x] 创建脚本测试文件 internal/script_test.go
     - [x] 实现 TestScriptParsing 测试脚本解析
@@ -369,8 +371,11 @@
     - [x] 验证所有重构功能正常工作
       - [x] 实现 TestRefactoredFeatures 测试所有重构功能
       - [x] 验证 UTF-8 标识符、Here-document、条件命令、数组赋值、算术函数、路径名展开、单词分割、波浪号展开等
-  - [ ] 修复性能回归
-    - [ ] 性能测试和优化（待完成）
+  - [x] 修复性能回归（基本完成）
+    - [x] 性能测试和优化（已完成）
+      - [x] 创建基准测试文件（benchmark_test.go）
+      - [x] 建立性能基准线
+      - [x] 监控性能回归
 - [x] 添加新功能测试（基本完成）
   - [x] 为新功能添加测试用例
     - [x] UTF-8 支持测试（TestUTF8Support）
@@ -383,8 +388,11 @@
     - [x] 波浪号展开测试（TestTildeExpand）
     - [x] 集成测试（TestLexerParserIntegration, TestParserExecutorIntegration, TestVariableExpansionIntegration, TestEndToEndIntegration）
     - [x] 脚本测试（TestScriptParsing, TestScriptExecution）
-  - [ ] 添加兼容性测试（待完成）
-  - [ ] 添加性能测试（待完成）
+  - [ ] 添加兼容性测试（待完成，低优先级）
+  - [x] 添加性能测试（已完成）
+    - [x] 创建基准测试文件（benchmark_test.go）
+    - [x] 为关键函数添加基准测试
+    - [x] 建立性能基准线
 - [x] 性能优化（基本完成）
   - [x] 分析性能瓶颈
     - [x] 运行基准测试，识别性能瓶颈
@@ -397,10 +405,10 @@
     - [x] 使用对象池（如需要）
     - [x] 减少不必要的字符串复制
     - [x] 优化数据结构选择
-  - [ ] 添加性能基准测试（待完成）
-    - [ ] 为关键函数添加基准测试
-    - [ ] 建立性能基准线
-    - [ ] 监控性能回归
+  - [x] 添加性能基准测试（已完成）
+    - [x] 为关键函数添加基准测试
+    - [x] 建立性能基准线
+    - [x] 监控性能回归
 
 ## 技术细节
 
