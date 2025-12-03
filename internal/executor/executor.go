@@ -2767,6 +2767,11 @@ func isDigitArith(ch byte) bool {
 	return ch >= '0' && ch <= '9'
 }
 
+// isLetterArith 判断是否为字母（用于算术表达式）
+func isLetterArith(ch byte) bool {
+	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z'
+}
+
 // parseArithmeticStringArg 解析字符串参数（变量展开或字符串字面量）
 // 从原始表达式（未展开）中解析字符串参数
 // 返回字符串值和新的位置
@@ -2804,50 +2809,138 @@ func parseArithmeticStringArg(expr string, pos *int, e *Executor) (string, error
 		return str, nil
 	}
 
-	// 检查是否是变量展开 $VAR 或 ${VAR}
+	// 检查是否是变量展开 $VAR、${VAR}、${VAR:-default}、$(command)、$((expr)) 等
 	if expr[*pos] == '$' {
+		startPos := *pos // 记录 $ 的位置
 		*pos++ // 跳过 $
-		varName := ""
 
+		// 检查是否是算术展开 $((...))
+		if *pos < len(expr) && expr[*pos] == '(' && *pos+1 < len(expr) && expr[*pos+1] == '(' {
+			// $((...)) 格式
+			*pos += 2 // 跳过 ((
+			parenDepth := 0
+			for *pos < len(expr) {
+				if *pos+1 < len(expr) && expr[*pos] == ')' && expr[*pos+1] == ')' && parenDepth == 0 {
+					// 找到匹配的 ))
+					*pos += 2 // 跳过 ))
+					// 提取完整的算术展开表达式
+					arithExpr := expr[startPos:*pos]
+					// 使用 expandVariablesInString 展开（它会处理算术展开）
+					if e == nil {
+						return "", fmt.Errorf("Executor instance required for variable expansion")
+					}
+					return e.expandVariablesInString(arithExpr), nil
+				} else if expr[*pos] == '(' {
+					parenDepth++
+					*pos++
+				} else if expr[*pos] == ')' {
+					if parenDepth > 0 {
+						parenDepth--
+					}
+					*pos++
+				} else {
+					*pos++
+				}
+			}
+			return "", fmt.Errorf("unclosed arithmetic expansion")
+		}
+
+		// 检查是否是命令替换 $(...)
+		if *pos < len(expr) && expr[*pos] == '(' {
+			// $(...) 格式
+			*pos++ // 跳过 (
+			parenDepth := 0
+			for *pos < len(expr) {
+				if expr[*pos] == ')' && parenDepth == 0 {
+					// 找到匹配的 )
+					*pos++ // 跳过 )
+					// 提取完整的命令替换表达式
+					cmdExpr := expr[startPos:*pos]
+					// 使用 expandVariablesInString 展开（它会处理命令替换）
+					if e == nil {
+						return "", fmt.Errorf("Executor instance required for variable expansion")
+					}
+					return e.expandVariablesInString(cmdExpr), nil
+				} else if expr[*pos] == '(' {
+					parenDepth++
+					*pos++
+				} else if expr[*pos] == ')' {
+					if parenDepth > 0 {
+						parenDepth--
+					}
+					*pos++
+				} else {
+					*pos++
+				}
+			}
+			return "", fmt.Errorf("unclosed command substitution")
+		}
+
+		// 检查是否是参数展开 ${...}
 		if *pos < len(expr) && expr[*pos] == '{' {
-			// ${VAR} 格式
+			// ${...} 格式（可能是 ${VAR}、${VAR:-default}、${VAR#pattern} 等）
 			*pos++ // 跳过 {
-			start := *pos
-			for *pos < len(expr) && expr[*pos] != '}' {
-				*pos++
+			braceDepth := 0
+			for *pos < len(expr) {
+				if expr[*pos] == '}' && braceDepth == 0 {
+					// 找到匹配的 }
+					*pos++ // 跳过 }
+					// 提取完整的参数展开表达式
+					paramExpr := expr[startPos:*pos]
+					// 使用 expandVariablesInString 展开（它会处理参数展开）
+					if e == nil {
+						return "", fmt.Errorf("Executor instance required for variable expansion")
+					}
+					return e.expandVariablesInString(paramExpr), nil
+				} else if expr[*pos] == '{' {
+					braceDepth++
+					*pos++
+				} else if expr[*pos] == '}' {
+					if braceDepth > 0 {
+						braceDepth--
+					}
+					*pos++
+				} else {
+					*pos++
+				}
 			}
-			if *pos >= len(expr) {
-				return "", fmt.Errorf("unclosed variable expansion")
-			}
-			varName = expr[start:*pos]
-			*pos++ // 跳过 }
-		} else if *pos < len(expr) {
-			// $VAR 格式
-			start := *pos
-			for *pos < len(expr) && ((expr[*pos] >= 'a' && expr[*pos] <= 'z') ||
-				(expr[*pos] >= 'A' && expr[*pos] <= 'Z') ||
-				(expr[*pos] >= '0' && expr[*pos] <= '9') ||
-				expr[*pos] == '_') {
-				*pos++
-			}
-			varName = expr[start:*pos]
+			return "", fmt.Errorf("unclosed parameter expansion")
 		}
 
-		if varName == "" {
-			return "", fmt.Errorf("invalid variable name")
+		// 处理简单变量 $VAR 或特殊变量 $#, $@, $*, $?, $!, $$, $0, $1, $2, ...
+		// 提取变量名直到遇到分隔符（逗号、右括号、空格等）
+		varEndPos := *pos
+		if *pos < len(expr) {
+			// 处理特殊变量
+			if expr[*pos] == '#' || expr[*pos] == '@' || expr[*pos] == '*' || 
+			   expr[*pos] == '?' || expr[*pos] == '!' || expr[*pos] == '$' || expr[*pos] == '0' {
+				varEndPos = *pos + 1
+			} else if isDigitArith(expr[*pos]) {
+				// 位置参数 $1, $2, ...
+				for varEndPos < len(expr) && isDigitArith(expr[varEndPos]) {
+					varEndPos++
+				}
+			} else if isLetterArith(expr[*pos]) || expr[*pos] == '_' {
+				// 普通变量 $VAR
+				for varEndPos < len(expr) && 
+					(isLetterArith(expr[varEndPos]) || isDigitArith(expr[varEndPos]) || 
+					 expr[varEndPos] == '_' || expr[varEndPos] == '[' || expr[varEndPos] == ']') {
+					varEndPos++
+				}
+			} else {
+				return "", fmt.Errorf("invalid variable name after $")
+			}
 		}
 
-		// 从 Executor 获取变量值
+		// 提取完整的变量展开表达式
+		varExpr := expr[startPos:varEndPos]
+		*pos = varEndPos
+
+		// 使用 expandVariablesInString 展开（它会处理所有类型的变量展开）
 		if e == nil {
 			return "", fmt.Errorf("Executor instance required for variable expansion")
 		}
-
-		varValue := e.env[varName]
-		if varValue == "" {
-			varValue = os.Getenv(varName)
-		}
-
-		return varValue, nil
+		return e.expandVariablesInString(varExpr), nil
 	}
 
 	// 如果既不是引号也不是 $，可能是已经展开的变量值（字符串字面量）
