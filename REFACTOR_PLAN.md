@@ -196,7 +196,13 @@
       - [x] 添加详细的错误位置信息（token 位置，行号、列号）
       - [x] 添加错误类型分类（未闭合括号、未闭合大括号、未闭合控制流等）
       - [x] 在关键解析函数中添加错误检测（parseSubshell, parseGroupCommand, parseIfStatement, parseForStatement, parseWhileStatement, parseCaseStatement）
-      - [ ] 添加错误恢复机制（跳过错误继续解析）
+      - [x] 添加错误恢复机制（跳过错误继续解析）
+        - [x] 实现同步点机制（syncPointTokens）
+        - [x] 实现通用错误恢复（recoverFromError）
+        - [x] 实现未闭合错误恢复（recoverFromUnclosedError）
+        - [x] 实现控制流结束恢复（recoverToControlFlowEnd）
+        - [x] 在 ParseProgram 中集成错误恢复机制
+        - [x] 添加错误恢复测试用例（TestErrorRecovery, TestRecoverFromUnclosedError）
       - [ ] 改进错误消息格式（参考 bash 的错误格式）
     - [ ] 改进词法分析器错误处理
       - [ ] 添加详细的错误位置信息（行号、列号）

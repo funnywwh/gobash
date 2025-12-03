@@ -54,7 +54,29 @@ func (p *Parser) ParseProgram() *Program {
 			p.nextToken()
 			continue
 		}
+
+		// 记录解析前的错误数量
+		errorCountBefore := len(p.parseErrors)
+
 		stmt := p.parseStatement()
+		
+		// 检查是否有新的错误产生
+		if len(p.parseErrors) > errorCountBefore {
+			// 有错误产生，尝试恢复
+			lastError := p.parseErrors[len(p.parseErrors)-1]
+			if p.shouldContinueAfterError(lastError.Type) {
+				// 尝试从未闭合错误中恢复
+				if lastError.Type == ErrorTypeUnclosedParen ||
+				   lastError.Type == ErrorTypeUnclosedBrace ||
+				   lastError.Type == ErrorTypeUnclosedControlFlow {
+					p.recoverFromUnclosedError(lastError.Type)
+				} else {
+					// 使用通用错误恢复
+					p.recoverFromError()
+				}
+			}
+		}
+
 		if stmt != nil {
 			// 检查是否是命令链（; && ||）
 			stmt = p.parseCommandChain(stmt)
