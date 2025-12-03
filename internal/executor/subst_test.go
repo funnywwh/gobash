@@ -50,13 +50,17 @@ func TestWordSplit(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// 设置 IFS
-			if tt.ifs == "" {
-				// 对于空字符串，需要特殊处理
-				// 如果 IFS 未设置，使用默认值
+			if tt.name == "Empty IFS (no split)" {
+				// 对于空 IFS 测试，需要显式设置为空字符串
+				// 这样 wordSplit 才能识别它是空字符串而不是未设置
+				e.SetEnv("IFS", "")
+				os.Setenv("IFS", "")
+			} else if tt.ifs == "" {
+				// 对于其他空字符串情况，表示未设置，使用默认值
 				delete(e.env, "IFS")
 				os.Unsetenv("IFS")
 			} else {
-				e.env["IFS"] = tt.ifs
+				e.SetEnv("IFS", tt.ifs)
 				os.Setenv("IFS", tt.ifs)
 			}
 			
