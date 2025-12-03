@@ -340,7 +340,16 @@
 - [x] 运行现有测试，确保兼容性
   - [x] 运行所有单元测试（词法分析器、语法分析器、执行器测试通过）
   - [ ] 运行集成测试（待添加）
-  - [ ] 运行脚本测试（待添加）
+  - [x] 运行脚本测试（已完成）
+    - [x] 创建脚本测试文件 internal/script_test.go
+    - [x] 实现 TestScriptParsing 测试脚本解析
+    - [x] 实现 TestScriptExecution 测试脚本执行
+    - [x] 测试主要测试脚本：
+      - test_arithmetic_assignment.sh
+      - test_variable_expansion.sh
+      - test_case_statement.sh
+      - test_while_loop.sh
+      - test_wildcard.sh
 - [ ] 修复回归问题
   - [ ] 修复破坏的测试
   - [ ] 修复功能回归
