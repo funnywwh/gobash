@@ -110,35 +110,48 @@ func (s *Shell) Run() {
 		// 更新提示符
 		rl.SetPrompt(s.prompt)
 
-		line, err := rl.Readline()
-		if err != nil {
-			if err == readline.ErrInterrupt {
-				// Ctrl+C，继续
-				fmt.Println()
+		var currentStatement strings.Builder
+		for {
+			line, err := rl.Readline()
+			if err != nil {
+				if err == readline.ErrInterrupt {
+					// Ctrl+C，继续
+					fmt.Println()
+					currentStatement.Reset()
+					break
+				}
+				// EOF或其他错误，退出
+				return
+			}
+
+			lineTrimmed := strings.TrimSpace(line)
+			
+			// 如果有未完成的语句，追加当前行
+			if currentStatement.Len() > 0 {
+				currentStatement.WriteString("\n")
+				currentStatement.WriteString(line)
+			} else {
+				currentStatement.WriteString(line)
+			}
+
+			// 检查语句是否完成
+			statement := currentStatement.String()
+			isComplete := s.isStatementComplete(statement)
+			
+			// 也检查是否以反斜杠结尾（行继续符）
+			if !isComplete || strings.HasSuffix(lineTrimmed, "\\") {
+				// 语句未完成，继续读取下一行
+				rl.SetPrompt("> ")
 				continue
 			}
-			// EOF或其他错误，退出
+
+			// 语句完成，执行
 			break
 		}
 
-		line = strings.TrimSpace(line)
-		if line == "" {
+		line := currentStatement.String()
+		if strings.TrimSpace(line) == "" {
 			continue
-		}
-
-		// 处理多行输入（以\结尾）
-		for strings.HasSuffix(line, "\\") {
-			line = strings.TrimSuffix(line, "\\")
-			rl.SetPrompt("> ")
-			nextLine, err := rl.Readline()
-			if err != nil {
-				if err == readline.ErrInterrupt {
-					fmt.Println()
-					break
-				}
-				break
-			}
-			line += " " + strings.TrimSpace(nextLine)
 		}
 
 		if err := s.executeLine(line); err != nil {
@@ -172,23 +185,42 @@ func (s *Shell) runSimple() {
 	for s.running {
 		fmt.Print(s.prompt)
 
-		if !scanner.Scan() {
+		var currentStatement strings.Builder
+		for {
+			if !scanner.Scan() {
+				return
+			}
+
+			line := scanner.Text()
+			lineTrimmed := strings.TrimSpace(line)
+			
+			// 如果有未完成的语句，追加当前行
+			if currentStatement.Len() > 0 {
+				currentStatement.WriteString("\n")
+				currentStatement.WriteString(line)
+			} else {
+				currentStatement.WriteString(line)
+			}
+
+			// 检查语句是否完成
+			statement := currentStatement.String()
+			isComplete := s.isStatementComplete(statement)
+			
+			// 也检查是否以反斜杠结尾（行继续符）
+			if !isComplete || strings.HasSuffix(lineTrimmed, "\\") {
+				// 语句未完成，继续读取下一行
+				fmt.Print("> ")
+				continue
+			}
+
+			// 语句完成，执行
+			line = statement
 			break
 		}
 
-		line := scanner.Text()
+		line := currentStatement.String()
 		if strings.TrimSpace(line) == "" {
 			continue
-		}
-
-		// 处理多行输入（以\结尾）
-		for strings.HasSuffix(strings.TrimSpace(line), "\\") {
-			line = strings.TrimSuffix(strings.TrimSpace(line), "\\")
-			fmt.Print("> ")
-			if !scanner.Scan() {
-				break
-			}
-			line += " " + scanner.Text()
 		}
 
 		if err := s.executeLine(line); err != nil {
@@ -364,10 +396,18 @@ func (s *Shell) ExecuteReader(reader io.Reader) error {
 
 // isStatementComplete 检查语句是否完成
 // 检查是否有关键字未闭合（case需要esac，if需要fi，for/while需要done等）
+// 也检查是否以反斜杠结尾（行继续符）
 func (s *Shell) isStatementComplete(statement string) bool {
 	statement = strings.TrimSpace(statement)
 	if statement == "" {
 		return true
+	}
+
+	// 检查是否以反斜杠结尾（行继续符）
+	// 注意：需要检查去除尾部空白后的最后一个字符
+	trimmed := strings.TrimRight(statement, " \t")
+	if strings.HasSuffix(trimmed, "\\") {
+		return false
 	}
 
 	// 使用更精确的匹配来统计关键字（必须是独立的单词）

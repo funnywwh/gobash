@@ -258,8 +258,14 @@
     - [x] 改进 shell 层的多行语句处理
       - [x] isStatementComplete 函数已实现，能够检测未完成的控制流语句
       - [x] 正确处理脚本模式下的多行语句（ExecuteReader 函数）
-      - [ ] 改进交互式模式下的多行输入提示
-    - [ ] 添加多行语句的测试用例
+      - [x] 改进交互式模式下的多行输入提示
+        - [x] 在 Run() 中使用 isStatementComplete 检测未完成的语句
+        - [x] 在 runSimple() 中使用 isStatementComplete 检测未完成的语句
+        - [x] 支持控制流语句（if/else/fi, for/do/done, while/do/done, case/esac）的多行输入
+        - [x] 支持反斜杠行继续符的多行输入
+    - [x] 添加多行语句的测试用例
+      - [x] 添加 TestMultilineInput 测试多行输入处理
+      - [x] 添加 TestIsStatementComplete 测试语句完成检测
 
 #### 语法分析器测试
 - [x] 添加新功能的单元测试（复合命令、命令链、case语句、while语句、参数展开、新重定向类型等）
