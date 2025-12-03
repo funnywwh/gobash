@@ -584,8 +584,17 @@ func (l *Lexer) readIdentifierOrPath() string {
 func (l *Lexer) readNumber() string {
 	position := l.position
 	for isDigit(l.ch) {
+		// 保存当前字符的结束位置
+		currentEnd := l.readPosition
 		l.readChar()
+		// 检查下一个字符是否是数字
+		if !isDigit(l.ch) {
+			// 下一个字符不是数字，使用之前保存的结束位置
+			return l.input[position:currentEnd]
+		}
 	}
+	// 当字符不匹配时，l.position 指向当前字符的开始位置（不匹配的字符）
+	// 这就是最后一个匹配字符的结束位置
 	return l.input[position:l.position]
 }
 
