@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 	"gobash/internal/builtin"
 	"gobash/internal/lexer"
 	"gobash/internal/parser"
@@ -2481,10 +2483,51 @@ func parseArithmeticFactor(expr string, pos *int) (int64, error) {
 		return result, nil
 	}
 	
-	// 处理函数调用（简化实现，只支持基本函数）
-	if *pos+3 < len(expr) {
-		// 检查是否是函数调用，如 abs(, min(, max( 等
-		// 这里简化处理，暂时不支持函数调用
+	// 处理函数调用（必须在解析数字之前）
+	// 检查是否是函数调用，如 abs(, min(, max( 等
+	funcName := ""
+	funcStart := *pos
+	
+	// 先尝试读取函数名（字母、数字、下划线）
+	for *pos < len(expr) {
+		ch := expr[*pos]
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_' {
+			funcName += string(ch)
+			*pos++
+		} else if ch >= '0' && ch <= '9' {
+			// 数字可以作为函数名的一部分，但如果是第一个字符，则不是函数名
+			if funcName == "" {
+				break
+			}
+			funcName += string(ch)
+			*pos++
+		} else if ch == '(' {
+			// 找到函数名和开括号，这是一个函数调用
+			if funcName != "" {
+				*pos++ // 跳过 (
+				args, err := parseArithmeticFunctionArgs(expr, pos)
+				if err != nil {
+					return 0, err
+				}
+				// 调用算术函数
+				result, err := evaluateArithmeticFunction(funcName, args)
+				if err != nil {
+					return 0, fmt.Errorf("arithmetic function %s: %v", funcName, err)
+				}
+				return result, nil
+			}
+			// 如果没有函数名，这是括号表达式，不是函数调用
+			break
+		} else {
+			// 不是函数调用，恢复位置
+			*pos = funcStart
+			break
+		}
+	}
+	
+	// 如果不是函数调用，恢复位置
+	if funcName != "" {
+		*pos = funcStart
 	}
 	
 	// 解析数字
@@ -2514,6 +2557,136 @@ func parseArithmeticFactor(expr string, pos *int) (int64, error) {
 // isDigitArith 判断是否为数字（用于算术表达式）
 func isDigitArith(ch byte) bool {
 	return ch >= '0' && ch <= '9'
+}
+
+// parseArithmeticFunctionArgs 解析算术函数参数
+func parseArithmeticFunctionArgs(expr string, pos *int) ([]int64, error) {
+	var args []int64
+	
+	// 跳过空白字符
+	for *pos < len(expr) && (expr[*pos] == ' ' || expr[*pos] == '\t') {
+		*pos++
+	}
+	
+	// 如果下一个字符是 )，没有参数
+	if *pos < len(expr) && expr[*pos] == ')' {
+		*pos++ // 跳过 )
+		return args, nil
+	}
+	
+	// 解析参数列表
+	for {
+		// 解析一个参数（算术表达式）
+		arg, err := parseArithmeticExpression(expr, pos)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, arg)
+		
+		// 跳过空白字符
+		for *pos < len(expr) && (expr[*pos] == ' ' || expr[*pos] == '\t') {
+			*pos++
+		}
+		
+		// 检查是否有更多参数
+		if *pos >= len(expr) {
+			return nil, fmt.Errorf("missing closing parenthesis in function call")
+		}
+		
+		if expr[*pos] == ')' {
+			*pos++ // 跳过 )
+			break
+		} else if expr[*pos] == ',' {
+			*pos++ // 跳过 ,
+			// 继续解析下一个参数
+		} else {
+			return nil, fmt.Errorf("unexpected character in function arguments: %c", expr[*pos])
+		}
+	}
+	
+	return args, nil
+}
+
+// evaluateArithmeticFunction 计算算术函数
+func evaluateArithmeticFunction(name string, args []int64) (int64, error) {
+	switch name {
+	case "abs":
+		if len(args) != 1 {
+			return 0, fmt.Errorf("abs requires 1 argument, got %d", len(args))
+		}
+		if args[0] < 0 {
+			return -args[0], nil
+		}
+		return args[0], nil
+		
+	case "min":
+		if len(args) < 1 {
+			return 0, fmt.Errorf("min requires at least 1 argument, got %d", len(args))
+		}
+		min := args[0]
+		for i := 1; i < len(args); i++ {
+			if args[i] < min {
+				min = args[i]
+			}
+		}
+		return min, nil
+		
+	case "max":
+		if len(args) < 1 {
+			return 0, fmt.Errorf("max requires at least 1 argument, got %d", len(args))
+		}
+		max := args[0]
+		for i := 1; i < len(args); i++ {
+			if args[i] > max {
+				max = args[i]
+			}
+		}
+		return max, nil
+		
+	case "length":
+		// length 函数需要字符串参数，但算术表达式中只能处理数字
+		// 这里简化处理，将数字转换为字符串再计算长度
+		if len(args) != 1 {
+			return 0, fmt.Errorf("length requires 1 argument, got %d", len(args))
+		}
+		str := fmt.Sprintf("%d", args[0])
+		if args[0] < 0 {
+			// 负数，去掉负号
+			str = str[1:]
+		}
+		return int64(len(str)), nil
+		
+	case "int":
+		// int 函数向下取整（对于整数，直接返回）
+		if len(args) != 1 {
+			return 0, fmt.Errorf("int requires 1 argument, got %d", len(args))
+		}
+		return args[0], nil
+		
+	case "rand":
+		// rand 函数返回 0 到 32767 之间的随机数
+		if len(args) > 0 {
+			return 0, fmt.Errorf("rand takes no arguments, got %d", len(args))
+		}
+		// 使用简单的线性同余生成器
+		// 注意：这不是线程安全的，但对于单线程 shell 足够了
+		return int64(rand.Intn(32768)), nil
+		
+	case "srand":
+		// srand 函数设置随机数种子
+		if len(args) > 1 {
+			return 0, fmt.Errorf("srand requires 0 or 1 argument, got %d", len(args))
+		}
+		if len(args) == 1 {
+			rand.Seed(args[0])
+		} else {
+			rand.Seed(time.Now().UnixNano())
+		}
+		return 0, nil
+		
+	default:
+		return 0, fmt.Errorf("unknown arithmetic function: %s", name)
+	}
 }
 
 // evaluateDoubleBracketExpression 计算 [[ 表达式（支持 && 和 ||）
