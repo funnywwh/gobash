@@ -324,7 +324,10 @@
       - [ ] `index(s, t)` - 查找子字符串位置（需要字符串支持）
     - [x] 改进 parseArithmeticFactor 函数以支持函数调用
     - [x] 添加函数参数解析（支持多个参数）
-    - [ ] 添加算术函数测试用例
+    - [x] 添加算术函数测试用例
+      - [x] 添加 TestArithmeticFunctions 测试所有算术函数（abs, min, max, length, int, rand, srand）
+      - [x] 添加 TestArithmeticFunctionErrors 测试算术函数错误处理
+      - [x] 测试嵌套函数调用和函数与运算符的组合
   - [x] 正确处理变量展开（在 evaluateArithmetic 中已处理）
 - [x] 改进命令替换
   - [x] 正确处理嵌套（在 expandCommandSubstitutionCommand 中展开嵌套的命令替换）
