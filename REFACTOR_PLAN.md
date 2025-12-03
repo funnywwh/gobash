@@ -321,7 +321,13 @@
       - [x] `rand()` - 随机数（0-32767）
       - [x] `srand([seed])` - 设置随机数种子
       - [ ] `substr(s, start, length)` - 子字符串（需要字符串支持）
+        - [ ] 需要修改 parseArithmeticFunctionArgs 以支持字符串参数
+        - [ ] 需要修改 parseArithmeticFactor 以识别字符串参数
+        - [ ] 已添加 evaluateArithmeticFunctionWithStrings 函数框架
       - [ ] `index(s, t)` - 查找子字符串位置（需要字符串支持）
+        - [ ] 需要修改 parseArithmeticFunctionArgs 以支持字符串参数
+        - [ ] 需要修改 parseArithmeticFactor 以识别字符串参数
+        - [ ] 已添加 evaluateArithmeticFunctionWithStrings 函数框架
     - [x] 改进 parseArithmeticFactor 函数以支持函数调用
     - [x] 添加函数参数解析（支持多个参数）
     - [x] 添加算术函数测试用例

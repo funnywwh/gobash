@@ -2721,6 +2721,68 @@ func evaluateArithmeticFunction(name string, args []int64) (int64, error) {
 	}
 }
 
+// evaluateArithmeticFunctionWithStrings 计算需要字符串参数的算术函数
+// 这个函数用于处理 substr 和 index 等需要字符串参数的函数
+// 注意：字符串参数通过变量展开获取，例如 substr($VAR, 0, 3) 中的 $VAR 会被展开为字符串
+// 注意：当前实现中，substr 和 index 函数尚未完全实现，因为需要修改 parseArithmeticFunctionArgs
+// 以支持字符串参数。这是一个待完成的功能。
+func evaluateArithmeticFunctionWithStrings(name string, args []int64, stringArgs []string, e *Executor) (int64, error) {
+	switch name {
+	case "substr":
+		// substr(s, start, length) - 子字符串
+		// 参数：s 是字符串（通过 stringArgs[0] 传递），start 和 length 是数字
+		if len(stringArgs) < 1 {
+			return 0, fmt.Errorf("substr requires at least 1 string argument")
+		}
+		if len(args) < 2 {
+			return 0, fmt.Errorf("substr requires 2 numeric arguments (start, length), got %d", len(args))
+		}
+		s := stringArgs[0]
+		start := args[0]
+		length := args[1]
+		
+		// 处理负数索引（从末尾开始）
+		if start < 0 {
+			start = int64(len(s)) + start
+		}
+		if start < 0 {
+			start = 0
+		}
+		if start >= int64(len(s)) {
+			return 0, nil // 返回空字符串的长度（0）
+		}
+		
+		// 计算结束位置
+		end := start + length
+		if end > int64(len(s)) {
+			end = int64(len(s))
+		}
+		
+		// 返回子字符串的长度（简化实现，实际应该返回字符串的数值表示）
+		// 这里返回子字符串的长度作为占位符
+		return end - start, nil
+		
+	case "index":
+		// index(s, t) - 查找子字符串位置
+		// 参数：s 和 t 都是字符串（通过 stringArgs 传递）
+		if len(stringArgs) < 2 {
+			return 0, fmt.Errorf("index requires 2 string arguments, got %d", len(stringArgs))
+		}
+		s := stringArgs[0]
+		t := stringArgs[1]
+		
+		// 查找子字符串位置（从 1 开始，bash 的行为）
+		pos := strings.Index(s, t)
+		if pos == -1 {
+			return 0, nil // 未找到，返回 0
+		}
+		return int64(pos + 1), nil // bash 中索引从 1 开始
+		
+	default:
+		return 0, fmt.Errorf("unknown string arithmetic function: %s", name)
+	}
+}
+
 // evaluateDoubleBracketExpression 计算 [[ 表达式（支持 && 和 ||）
 func (e *Executor) evaluateDoubleBracketExpression(args []string) (bool, error) {
 	if len(args) == 0 {
