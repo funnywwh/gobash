@@ -294,7 +294,16 @@
   - [x] 支持 `*` 通配符（通过 filepath.Glob 实现）
   - [x] 支持 `?` 通配符（通过 filepath.Glob 实现）
   - [x] 支持 `[...]` 字符类（通过 filepath.Glob 实现，支持 `[!...]` 和 `[^...]` 否定字符类）
-  - [ ] 支持 `**` 递归匹配（如果启用，暂时不支持，需要额外实现）
+  - [x] 支持 `**` 递归匹配（如果启用）
+    - [x] 实现 pathnameExpandRecursive 函数处理 ** 模式
+    - [x] 实现 matchRecursive 函数递归匹配目录
+    - [x] 支持 globstar 选项（通过环境变量 GLOBSTAR 或 options["globstar"]）
+    - [x] 支持各种 ** 模式：
+      - `**` - 匹配当前目录及其所有子目录
+      - `**/pattern` - 匹配所有目录中的 pattern
+      - `pattern/**` - 匹配 pattern 目录及其所有子目录
+      - `prefix/**/suffix` - 匹配 prefix 目录下任意深度的 suffix
+    - [ ] 添加 ** 递归匹配的测试用例
   - [x] 正确处理隐藏文件（如果模式不以 `.` 开头，不匹配隐藏文件）
 - [x] 实现波浪号展开（~）
   - [x] `~` - 当前用户主目录（通过 HOME 或 USERPROFILE 环境变量）

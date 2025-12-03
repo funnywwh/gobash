@@ -324,12 +324,35 @@ func (e *Executor) wordSplit(text string) []string {
 // 1. `*` 匹配任意数量的字符（除了 `/`）
 // 2. `?` 匹配单个字符（除了 `/`）
 // 3. `[...]` 匹配字符类
-// 4. `**` 递归匹配（如果启用，暂时不支持）
+// 4. `**` 递归匹配（如果启用 globstar 选项）
 // 5. 隐藏文件（以 `.` 开头）需要特殊处理
 func (e *Executor) pathnameExpand(pattern string) []string {
 	// 如果模式不包含通配符，直接返回
 	if !strings.ContainsAny(pattern, "*?[") {
 		return []string{pattern}
+	}
+	
+	// 检查是否启用 globstar 选项（支持 ** 递归匹配）
+	// 注意：globstar 是 shopt 选项，不是 set 选项
+	// 这里简化处理，检查环境变量 GLOBSTAR 或 options["globstar"]
+	globstarEnabled := false
+	if e != nil {
+		// 检查环境变量
+		if globstar, ok := e.env["GLOBSTAR"]; ok && globstar == "1" {
+			globstarEnabled = true
+		}
+		// 检查 options（如果通过 SetOptions 设置）
+		options := e.GetOptions()
+		if options != nil {
+			if val, ok := options["globstar"]; ok && val {
+				globstarEnabled = true
+			}
+		}
+	}
+	
+	// 如果启用 globstar 且模式包含 **，使用递归匹配
+	if globstarEnabled && strings.Contains(pattern, "**") {
+		return e.pathnameExpandRecursive(pattern)
 	}
 	
 	// 使用 filepath.Glob 进行匹配
@@ -362,6 +385,109 @@ func (e *Executor) pathnameExpand(pattern string) []string {
 	}
 	
 	return matches
+}
+
+// pathnameExpandRecursive 递归路径名展开（支持 **）
+// ** 匹配零个或多个目录和子目录
+func (e *Executor) pathnameExpandRecursive(pattern string) []string {
+	// 将 ** 替换为临时标记，然后递归匹配
+	// 策略：将 ** 替换为 *，然后递归遍历目录
+	
+	// 如果模式是 **，匹配当前目录及其所有子目录
+	if pattern == "**" {
+		return e.matchRecursive(".", "*")
+	}
+	
+	// 如果模式以 **/ 开头，匹配所有目录
+	if strings.HasPrefix(pattern, "**/") {
+		suffix := pattern[3:] // 跳过 "**/"
+		if suffix == "" {
+			return e.matchRecursive(".", "*")
+		}
+		return e.matchRecursive(".", suffix)
+	}
+	
+	// 如果模式以 /** 结尾，匹配所有子目录
+	if strings.HasSuffix(pattern, "/**") {
+		prefix := pattern[:len(pattern)-3] // 移除 "/**"
+		if prefix == "" {
+			return e.matchRecursive(".", "*")
+		}
+		// 先匹配前缀，然后在每个匹配的目录中递归匹配
+		prefixMatches := e.pathnameExpand(prefix)
+		result := []string{}
+		for _, pm := range prefixMatches {
+			info, err := os.Stat(pm)
+			if err == nil && info.IsDir() {
+				subMatches := e.matchRecursive(pm, "*")
+				result = append(result, subMatches...)
+			}
+			result = append(result, pm)
+		}
+		return result
+	}
+	
+	// 如果模式包含 /**/，分割并递归匹配
+	if strings.Contains(pattern, "/**/") {
+		parts := strings.SplitN(pattern, "/**/", 2)
+		prefix := parts[0]
+		suffix := parts[1]
+		
+		// 先匹配前缀
+		prefixMatches := e.pathnameExpand(prefix)
+		result := []string{}
+		for _, pm := range prefixMatches {
+			info, err := os.Stat(pm)
+			if err == nil && info.IsDir() {
+				// 递归匹配后缀
+				subMatches := e.matchRecursive(pm, suffix)
+				result = append(result, subMatches...)
+			}
+			// 也检查前缀本身是否匹配完整模式
+			fullPath := filepath.Join(pm, suffix)
+			if matches, err := filepath.Glob(fullPath); err == nil {
+				result = append(result, matches...)
+			}
+		}
+		if len(result) > 0 {
+			return result
+		}
+		// 如果没有匹配，返回原始模式
+		return []string{pattern}
+	}
+	
+	// 其他情况，使用普通匹配
+	return e.pathnameExpand(strings.ReplaceAll(pattern, "**", "*"))
+}
+
+// matchRecursive 递归匹配目录
+func (e *Executor) matchRecursive(dir string, pattern string) []string {
+	result := []string{}
+	
+	// 读取目录
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return result
+	}
+	
+	// 匹配当前目录中的文件
+	for _, entry := range entries {
+		entryPath := filepath.Join(dir, entry.Name())
+		
+		// 检查是否匹配模式
+		matched, err := filepath.Match(pattern, entry.Name())
+		if err == nil && matched {
+			result = append(result, entryPath)
+		}
+		
+		// 如果是目录，递归匹配
+		if entry.IsDir() {
+			subMatches := e.matchRecursive(entryPath, pattern)
+			result = append(result, subMatches...)
+		}
+	}
+	
+	return result
 }
 
 // expandPathnamePattern 展开路径名模式（支持字符类）
