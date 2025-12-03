@@ -2,6 +2,7 @@
 package parser
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"gobash/internal/lexer"
@@ -173,10 +174,18 @@ func (p *Parser) parseStatement() Statement {
 		}
 		
 		if isArrayAssignment {
-			// 这是数组赋值 arr=(1 2 3)
-			stmt := &ArrayAssignmentStatement{Name: arrayName, Values: []Expression{}}
+			// 这是数组赋值 arr=(1 2 3) 或 arr=([0]=a [1]=b)
+			stmt := &ArrayAssignmentStatement{
+				Name:          arrayName,
+				Values:        []Expression{},
+				IndexedValues: make(map[string]Expression),
+			}
 			p.nextToken() // 跳过 arr= token
 			p.nextToken() // 跳过 (
+			
+			// 检查是否是带索引的数组赋值 arr=([0]=a [1]=b)
+			hasIndexedValues := false
+			
 			// 解析数组元素
 			for p.curToken.Type != lexer.RPAREN && p.curToken.Type != lexer.EOF {
 				if p.curToken.Type == lexer.RPAREN {
@@ -187,12 +196,105 @@ func (p *Parser) parseStatement() Statement {
 					p.nextToken()
 					continue
 				}
-				stmt.Values = append(stmt.Values, p.parseExpression())
+				
+				// 检查是否是带索引的元素 [index]=value
+				if p.curToken.Type == lexer.LBRACKET {
+					// 这是带索引的数组元素 [index]=value
+					hasIndexedValues = true
+					p.nextToken() // 跳过 [
+					
+					// 读取索引（可能是数字、字符串或变量）
+					var indexExpr Expression
+					if p.curToken.Type == lexer.NUMBER {
+						indexExpr = p.parseExpression()
+					} else if p.curToken.Type == lexer.IDENTIFIER || 
+					          p.curToken.Type == lexer.STRING ||
+					          p.curToken.Type == lexer.STRING_SINGLE ||
+					          p.curToken.Type == lexer.STRING_DOUBLE ||
+					          p.curToken.Type == lexer.VAR ||
+					          p.curToken.Type == lexer.PARAM_EXPAND {
+						indexExpr = p.parseExpression()
+					} else {
+						// 索引为空，使用下一个可用索引
+						indexExpr = &Identifier{Value: ""}
+					}
+					
+					// 检查是否有 ]
+					if p.curToken.Type != lexer.RBRACKET {
+						// 索引表达式可能包含多个 token，继续读取直到找到 ]
+						for p.curToken.Type != lexer.RBRACKET && p.curToken.Type != lexer.EOF {
+							p.nextToken()
+						}
+					}
+					
+					if p.curToken.Type == lexer.RBRACKET {
+						p.nextToken() // 跳过 ]
+					}
+					
+					// 检查是否有 =（在 lexer 中，单独的 = 会被识别为 ILLEGAL）
+					// 但在数组赋值中，= 可能已经被包含在标识符中（如 arr[0]=value）
+					// 或者下一个 token 是 ILLEGAL（单独的 =）
+					if p.curToken.Type == lexer.ILLEGAL && p.curToken.Literal == "=" {
+						// 单独的 = token
+						p.nextToken() // 跳过 =
+					} else if strings.HasSuffix(p.curToken.Literal, "=") {
+						// token 包含 =（如 arr[0]=value 中的 =）
+						// 这种情况已经在 lexer 中处理了，当前 token 应该是值
+						// 但为了兼容，我们检查一下
+					}
+					
+					// 读取值（如果当前 token 是 =，下一个 token 是值）
+					// 如果当前 token 已经是值（因为 = 被包含在之前的 token 中），直接使用
+					var valueExpr Expression
+					if p.curToken.Type == lexer.ILLEGAL && p.curToken.Literal == "=" {
+						// 刚刚跳过了 =，现在读取值
+						valueExpr = p.parseExpression()
+					} else {
+						// 当前 token 可能就是值，或者需要解析表达式
+						valueExpr = p.parseExpression()
+					}
+					
+					// 将索引转换为字符串（用于 map 的 key）
+					indexStr := ""
+					if indexExpr != nil {
+						// 这里先保存索引表达式，在执行时再求值
+						// 暂时使用 Identifier 来存储索引的字符串表示
+						if ident, ok := indexExpr.(*Identifier); ok {
+							indexStr = ident.Value
+						} else if str, ok := indexExpr.(*StringLiteral); ok {
+							indexStr = str.Value
+						} else if num, ok := indexExpr.(*Identifier); ok && num.Value != "" {
+							// 尝试将数字字符串作为索引
+							indexStr = num.Value
+						} else {
+							// 对于复杂表达式，需要求值
+							// 这里我们创建一个特殊的表达式来标记需要求值
+							indexStr = "__EXPR__"
+						}
+					}
+					
+					// 如果索引字符串为空，表示使用下一个可用索引
+					if indexStr == "" {
+						indexStr = fmt.Sprintf("%d", len(stmt.Values))
+					}
+					
+					stmt.IndexedValues[indexStr] = valueExpr
+				} else {
+					// 普通数组元素（不带索引）
+					stmt.Values = append(stmt.Values, p.parseExpression())
+				}
 				p.nextToken()
 			}
+			
 			if p.curToken.Type == lexer.RPAREN {
 				p.nextToken() // 跳过 )
 			}
+			
+			// 如果使用了带索引的赋值，清空 Values（只使用 IndexedValues）
+			if hasIndexedValues && len(stmt.IndexedValues) > 0 {
+				stmt.Values = nil
+			}
+			
 			return stmt
 		}
 		

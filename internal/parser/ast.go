@@ -155,10 +155,13 @@ func (fs *FunctionStatement) String() string {
 }
 
 // ArrayAssignmentStatement 数组赋值语句
-// 例如：arr=(1 2 3)
+// 例如：arr=(1 2 3) 或 arr=([0]=a [1]=b [2]=c)
 type ArrayAssignmentStatement struct {
-	Name  string
+	Name   string
 	Values []Expression
+	// IndexedValues 存储带索引的数组元素 [index]=value
+	// 如果 IndexedValues 不为空，使用它；否则使用 Values
+	IndexedValues map[string]Expression // key 是索引（字符串形式，支持数字和字符串键）
 }
 
 func (as *ArrayAssignmentStatement) statementNode() {}

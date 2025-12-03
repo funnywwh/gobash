@@ -1043,14 +1043,90 @@ func (e *Executor) executeBlock(block *parser.BlockStatement) error {
 }
 
 // executeArrayAssignment 执行数组赋值
-// 例如：arr=(1 2 3)
+// 例如：arr=(1 2 3) 或 arr=([0]=a [1]=b [2]=c)
 func (e *Executor) executeArrayAssignment(stmt *parser.ArrayAssignmentStatement) error {
+	// 检查是否是带索引的数组赋值
+	if len(stmt.IndexedValues) > 0 {
+		// 带索引的数组赋值 arr=([0]=a [1]=b [2]=c)
+		// 首先确定数组的最大索引
+		maxIndex := -1
+		indexedMap := make(map[int]string)
+		hasStringKeys := false
+		
+		for indexStr, valueExpr := range stmt.IndexedValues {
+			// 索引字符串可能是数字字符串或变量名
+			// 先尝试直接解析为数字
+			index, err := strconv.Atoi(indexStr)
+			if err != nil {
+				// 不是数字索引，可能是关联数组
+				hasStringKeys = true
+				// 检查数组类型
+				if arrayType, ok := e.arrayTypes[stmt.Name]; ok && arrayType == "assoc" {
+					// 关联数组
+					if e.assocArrays[stmt.Name] == nil {
+						e.assocArrays[stmt.Name] = make(map[string]string)
+					}
+					// 展开索引中的变量
+					key := e.expandVariablesInString(indexStr)
+					value := e.evaluateExpression(valueExpr)
+					e.assocArrays[stmt.Name][key] = value
+				} else {
+					// 创建关联数组
+					if e.assocArrays[stmt.Name] == nil {
+						e.assocArrays[stmt.Name] = make(map[string]string)
+					}
+					e.arrayTypes[stmt.Name] = "assoc"
+					// 展开索引中的变量
+					key := e.expandVariablesInString(indexStr)
+					value := e.evaluateExpression(valueExpr)
+					e.assocArrays[stmt.Name][key] = value
+				}
+				continue
+			}
+			
+			// 数字索引
+			if index > maxIndex {
+				maxIndex = index
+			}
+			value := e.evaluateExpression(valueExpr)
+			indexedMap[index] = value
+		}
+		
+		// 如果是数字索引，创建普通数组
+		if !hasStringKeys && maxIndex >= 0 {
+			values := make([]string, maxIndex+1)
+			for i, val := range indexedMap {
+				values[i] = val
+			}
+			e.arrays[stmt.Name] = values
+			e.arrayTypes[stmt.Name] = "array"
+			// 设置环境变量
+			if len(values) > 0 {
+				e.env[stmt.Name] = values[0]
+			}
+			e.env[stmt.Name+"_LENGTH"] = fmt.Sprintf("%d", len(values))
+		} else if hasStringKeys {
+			// 有字符串键，已经处理为关联数组
+			// 设置环境变量（关联数组的第一个值）
+			if assocArr, ok := e.assocArrays[stmt.Name]; ok && len(assocArr) > 0 {
+				// 获取第一个值（map 的顺序不确定，但至少设置一个值）
+				for _, val := range assocArr {
+					e.env[stmt.Name] = val
+					break
+				}
+			}
+		}
+		return nil
+	}
+	
+	// 普通数组赋值 arr=(1 2 3)
 	values := make([]string, 0, len(stmt.Values))
 	for _, expr := range stmt.Values {
 		value := e.evaluateExpression(expr)
 		values = append(values, value)
 	}
 	e.arrays[stmt.Name] = values
+	e.arrayTypes[stmt.Name] = "array"
 	// 同时设置环境变量，使用特殊格式存储数组长度
 	e.env[stmt.Name+"_LENGTH"] = fmt.Sprintf("%d", len(values))
 	// 设置第一个元素为默认值（Bash行为）
