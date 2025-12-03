@@ -28,12 +28,13 @@ import (
 // Shell Shell主结构
 // 管理Shell的状态，包括执行器、提示符、别名、历史记录和选项
 type Shell struct {
-	executor *executor.Executor
-	prompt   string
-	running  bool
-	aliases  map[string]string
-	history  *History
-	options  map[string]bool // shell选项状态
+	executor      *executor.Executor
+	prompt        string
+	running       bool
+	aliases       map[string]string
+	history       *History
+	options       map[string]bool // shell选项状态
+	errorReporter *ErrorReporter  // 错误报告器
 }
 
 // New 创建新的Shell实例
@@ -52,12 +53,13 @@ func New() *Shell {
 	}
 
 	sh := &Shell{
-		executor: executor.New(),
-		prompt:   getPrompt(),
-		running:  true,
-		aliases:  make(map[string]string),
-		history:  history,
-		options:  make(map[string]bool),
+		executor:      executor.New(),
+		prompt:        getPrompt(),
+		running:       true,
+		aliases:       make(map[string]string),
+		history:       history,
+		options:       make(map[string]bool),
+		errorReporter: NewErrorReporter("", true), // 交互式模式
 	}
 
 	// 将选项状态传递给执行器
@@ -145,7 +147,8 @@ func (s *Shell) Run() {
 				// 在交互式模式下，exit 命令退出整个程序
 				os.Exit(exitErr.Code)
 			}
-			fmt.Fprintf(os.Stderr, "gobash: %v\n", err)
+			// 使用统一的错误报告器
+			s.errorReporter.ReportError(err)
 		} else {
 			// 成功执行的命令添加到历史记录
 			s.history.Add(line)
@@ -194,7 +197,8 @@ func (s *Shell) runSimple() {
 				// 在交互式模式下，exit 命令退出整个程序
 				os.Exit(exitErr.Code)
 			}
-			fmt.Fprintf(os.Stderr, "gobash: %v\n", err)
+			// 使用统一的错误报告器
+			s.errorReporter.ReportError(err)
 		} else {
 			// 成功执行的命令添加到历史记录
 			s.history.Add(line)
@@ -235,6 +239,8 @@ func (s *Shell) ExecuteScript(scriptPath string, args ...string) error {
 	}
 	defer file.Close()
 
+	// 设置错误报告器的脚本路径（非交互式模式）
+	s.errorReporter = NewErrorReporter(scriptPath, false)
 	return s.ExecuteReader(file)
 }
 
@@ -295,8 +301,10 @@ func (s *Shell) ExecuteReader(reader io.Reader) error {
 					// 返回 ScriptExitError，让调用者决定如何处理（不输出错误信息）
 					return scriptExitErr
 				}
-				// 输出错误信息到stderr，包含行号（只有非退出错误才输出）
-				fmt.Fprintf(os.Stderr, "gobash: 第%d行: %v\n", lineNum, err)
+				// 使用统一的错误报告器
+				s.errorReporter.SetLineNum(lineNum)
+				s.errorReporter.ReportError(err)
+				// 输出语句内容（用于调试）
 				fmt.Fprintf(os.Stderr, "  %s\n", statement)
 				// 如果设置了set -e，遇到错误应该退出
 				// 但是 ScriptExitError 和 ExitError 已经表示脚本退出，不需要再次包装
@@ -329,8 +337,10 @@ func (s *Shell) ExecuteReader(reader io.Reader) error {
 				// 返回 ScriptExitError，让调用者决定如何处理（不输出错误信息）
 				return scriptExitErr
 			}
-			// 输出错误信息到stderr，包含行号（只有非退出错误才输出）
-			fmt.Fprintf(os.Stderr, "gobash: 第%d行: %v\n", lineNum, err)
+			// 使用统一的错误报告器
+			s.errorReporter.SetLineNum(lineNum)
+			s.errorReporter.ReportError(err)
+			// 输出语句内容（用于调试）
 			fmt.Fprintf(os.Stderr, "  %s\n", statement)
 			if s.options["e"] {
 				// 检查是否已经是退出错误
@@ -503,6 +513,11 @@ func (s *Shell) executeCommand(input string) error {
 
 	// 检查解析错误
 	if len(p.Errors()) > 0 {
+		// 返回第一个解析错误（ParseError）
+		if len(p.ParseErrors()) > 0 {
+			return p.ParseErrors()[0]
+		}
+		// 如果没有 ParseError，返回通用错误
 		return fmt.Errorf("语法错误: %v", p.Errors())
 	}
 
@@ -515,7 +530,8 @@ func (s *Shell) executeCommand(input string) error {
 		if _, ok := err.(*executor.ScriptExitError); ok {
 			return err
 		}
-		return fmt.Errorf("执行错误: %v", err)
+		// 直接返回错误，让调用者使用错误报告器格式化
+		return err
 	}
 
 	return nil

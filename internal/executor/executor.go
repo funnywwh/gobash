@@ -142,7 +142,8 @@ func (e *Executor) executeStatement(stmt parser.Statement) error {
 	case *parser.ContinueStatement:
 		return e.executeContinue(s)
 	default:
-		return fmt.Errorf("unknown statement type: %T", stmt)
+		return newExecutionError(ExecutionErrorTypeUnknownStatement, 
+			fmt.Sprintf("unknown statement type: %T", stmt), "", nil, 0, "", nil)
 	}
 }
 
@@ -465,7 +466,8 @@ func (e *Executor) executeExternalCommand(cmd *parser.CommandStatement) error {
 		// 检查未定义的变量（set -u）
 		if strings.HasPrefix(argValue, "__UNDEFINED_VAR__") {
 			varName := strings.TrimPrefix(argValue, "__UNDEFINED_VAR__")
-			return fmt.Errorf("未定义的变量: %s", varName)
+			return newExecutionError(ExecutionErrorTypeVariableError, 
+				fmt.Sprintf("未定义的变量: %s", varName), cmdName, args[:i], 0, "", nil)
 		}
 		args[i] = argValue
 	}
@@ -476,7 +478,8 @@ func (e *Executor) executeExternalCommand(cmd *parser.CommandStatement) error {
 
 	// 处理重定向
 	if err := e.setupRedirects(execCmd, cmd.Redirects); err != nil {
-		return fmt.Errorf("重定向错误: %v", err)
+		return newExecutionError(ExecutionErrorTypeRedirectError, 
+			"重定向错误", cmdName, args, 0, "", err)
 	}
 
 	// 处理管道
@@ -498,7 +501,14 @@ func (e *Executor) executeExternalCommand(cmd *parser.CommandStatement) error {
 	// 执行命令
 	if cmd.Background {
 		if err := execCmd.Start(); err != nil {
-			return fmt.Errorf("无法启动命令 '%s': %v", cmdName, err)
+			// 检查是否是命令未找到
+			if _, ok := err.(*exec.ExitError); !ok {
+				// 通常是 "executable file not found" 错误
+				return newExecutionError(ExecutionErrorTypeCommandNotFound, 
+					"无法启动命令", cmdName, args, 0, "", err)
+			}
+			return newExecutionError(ExecutionErrorTypeCommandFailed, 
+				"无法启动命令", cmdName, args, 0, "", err)
 		}
 		// 构建命令字符串用于显示
 		cmdStr := cmdName
@@ -513,7 +523,14 @@ func (e *Executor) executeExternalCommand(cmd *parser.CommandStatement) error {
 
 	// 对于前台命令，使用 Start() + Wait() 而不是 Run()，以便处理信号
 	if err := execCmd.Start(); err != nil {
-		return fmt.Errorf("无法启动命令 '%s': %v", cmdName, err)
+		// 检查是否是命令未找到
+		if _, ok := err.(*exec.ExitError); !ok {
+			// 通常是 "executable file not found" 错误
+			return newExecutionError(ExecutionErrorTypeCommandNotFound, 
+				"无法启动命令", cmdName, args, 0, "", err)
+		}
+		return newExecutionError(ExecutionErrorTypeCommandFailed, 
+			"无法启动命令", cmdName, args, 0, "", err)
 	}
 
 	// 设置信号处理，当收到 SIGINT (Ctrl+C) 时，向子进程发送信号
@@ -535,11 +552,18 @@ func (e *Executor) executeExternalCommand(cmd *parser.CommandStatement) error {
 		signal.Stop(sigChan)
 		if err != nil {
 			// 检查是否是命令未找到
-			if _, ok := err.(*exec.ExitError); !ok {
-				return fmt.Errorf("命令 '%s' 未找到或无法执行: %v", cmdName, err)
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				// 命令执行失败，返回退出码
+				exitCode := 1
+				if exitErr.ProcessState != nil {
+					exitCode = exitErr.ProcessState.ExitCode()
+				}
+				return newExecutionError(ExecutionErrorTypeCommandFailed, 
+					"命令执行失败", cmdName, args, exitCode, "", err)
 			}
-			// 命令执行失败，返回退出码
-			return err
+			// 命令未找到或无法执行
+			return newExecutionError(ExecutionErrorTypeCommandNotFound, 
+				"命令未找到或无法执行", cmdName, args, 0, "", err)
 		}
 		return nil
 	case sig := <-sigChan:
@@ -648,7 +672,15 @@ func (e *Executor) executePipe(left, right *parser.CommandStatement) error {
 		err = <-done
 		signal.Stop(sigChan)
 		if err != nil {
-			return fmt.Errorf("等待右侧命令 '%s' 完成失败: %v", rightCmdName, err)
+			// 获取退出码（如果可用）
+			exitCode := 1
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				if exitErr.ProcessState != nil {
+					exitCode = exitErr.ProcessState.ExitCode()
+				}
+			}
+			return newExecutionError(ExecutionErrorTypePipeError, 
+				"等待右侧命令完成失败", rightCmdName, nil, exitCode, "", err)
 		}
 		return nil
 	case sig := <-sigChan:
