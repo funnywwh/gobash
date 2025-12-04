@@ -718,8 +718,14 @@ func (e *Executor) executePipe(left, right *parser.CommandStatement) error {
 // setupRedirects 设置重定向
 func (e *Executor) setupRedirects(cmd *exec.Cmd, redirects []*parser.Redirect) error {
 	for _, redirect := range redirects {
-		target := e.evaluateExpression(redirect.Target)
-		if target == "" {
+		// 对于 heredoc，target 可能为空（因为内容在 HereDoc 中）
+		target := ""
+		if redirect.Target != nil {
+			target = e.evaluateExpression(redirect.Target)
+		}
+		
+		// 只有非 heredoc 类型才检查 target 是否为空
+		if target == "" && redirect.Type != parser.REDIRECT_HEREDOC && redirect.Type != parser.REDIRECT_HEREDOC_STRIP {
 			return fmt.Errorf("redirect target is empty")
 		}
 

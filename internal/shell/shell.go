@@ -318,6 +318,33 @@ func (s *Shell) ExecuteReader(reader io.Reader) error {
 			currentStatement.WriteString(originalLine)
 		}
 
+		// 检查当前行是否包含 heredoc 标记，如果有则立即跳过内容
+		if strings.Contains(originalLine, "<<") {
+			// 提取 heredoc 分隔符
+			delim := extractHeredocDelimiterFromLine(originalLine)
+			if delim != "" {
+				// 跳过 heredoc 内容直到找到分隔符
+				heredocContent := ""
+				foundDelimiter := false
+				for scanner.Scan() {
+					lineNum++
+					contentLine := scanner.Text()
+					if strings.TrimSpace(contentLine) == delim {
+						// 找到分隔符
+						foundDelimiter = true
+						break
+					}
+					// heredoc 内容保存（稍后可能需要用于解析）
+					heredocContent += contentLine + "\n"
+				}
+				
+				// heredoc 处理完成，不将内容添加到 statement
+				// 但需要确保 parser 知道 heredoc 结束了
+				_ = heredocContent // heredoc 内容不添加到 statement
+				_ = foundDelimiter
+			}
+		}
+
 		// 检查语句是否完成
 		statement := currentStatement.String()
 		isComplete := s.isStatementComplete(statement)
@@ -542,6 +569,62 @@ func (s *Shell) isStatementComplete(statement string) bool {
 	}
 
 	return true
+}
+
+// extractHeredocDelimiterFromLine 从一行中提取 heredoc 分隔符
+func extractHeredocDelimiterFromLine(line string) string {
+	// 查找 << 或 <<-
+	idx := strings.Index(line, "<<")
+	if idx < 0 {
+		return ""
+	}
+	
+	// 检查是否是 <<- 或 <<<
+	afterHeredoc := line[idx:]
+	var suffix string
+	if strings.HasPrefix(afterHeredoc, "<<-") {
+		suffix = line[idx+3:]
+	} else if strings.HasPrefix(afterHeredoc, "<<<") {
+		// <<< here-string，不需要处理
+		return ""
+	} else if strings.HasPrefix(afterHeredoc, "<<") {
+		suffix = line[idx+2:]
+	} else {
+		return ""
+	}
+	
+	// 跳过空白字符
+	suffix = strings.TrimLeft(suffix, " \t")
+	if len(suffix) == 0 {
+		return ""
+	}
+	
+	// 检查分隔符是否带引号
+	if suffix[0] == '\'' || suffix[0] == '"' {
+		// 带引号的分隔符
+		quoteChar := suffix[0]
+		endQuote := strings.IndexByte(suffix[1:], quoteChar)
+		if endQuote >= 0 {
+			return suffix[1 : endQuote+1]
+		}
+		// 引号未闭合，尝试提取第一个字段
+		parts := strings.Fields(suffix)
+		if len(parts) > 0 {
+			delim := parts[0]
+			if len(delim) > 1 && (delim[0] == '\'' || delim[0] == '"') {
+				return delim[1 : len(delim)-1]
+			}
+			return delim
+		}
+	} else {
+		// 不带引号的分隔符
+		parts := strings.Fields(suffix)
+		if len(parts) > 0 {
+			return parts[0]
+		}
+	}
+	
+	return ""
 }
 
 // executeLine 执行一行命令
