@@ -13,13 +13,13 @@ import (
 // 负责将输入的shell命令字符串分解为一系列token
 type Lexer struct {
 	input        string
-	position     int  // 当前位置（字节位置）
-	readPosition int  // 读取位置（字节位置）
-	ch           byte // 当前字符（ASCII 快速路径）
-	chRune       rune // 当前字符的 rune 值（UTF-8 支持）
-	chWidth      int  // 当前字符的字节宽度（UTF-8 支持）
-	line         int  // 当前行号
-	column       int  // 当前列号
+	position     int           // 当前位置（字节位置）
+	readPosition int           // 读取位置（字节位置）
+	ch           byte          // 当前字符（ASCII 快速路径）
+	chRune       rune          // 当前字符的 rune 值（UTF-8 支持）
+	chWidth      int           // 当前字符的字节宽度（UTF-8 支持）
+	line         int           // 当前行号
+	column       int           // 当前列号
 	errors       []*LexerError // 词法分析器错误列表
 }
 
@@ -43,29 +43,29 @@ func (l *Lexer) readChar() {
 		l.chWidth = 0
 		return
 	}
-	
+
 	// 快速路径：ASCII 字符（< 128）
 	if l.readPosition < len(l.input) && l.input[l.readPosition] < 128 {
 		l.ch = l.input[l.readPosition]
 		l.chRune = rune(l.ch)
 		l.chWidth = 1
-	l.position = l.readPosition
-	l.readPosition++
-	if l.ch == '\n' {
-		l.line++
-		l.column = 1
-	} else {
-		l.column++
-	}
+		l.position = l.readPosition
+		l.readPosition++
+		if l.ch == '\n' {
+			l.line++
+			l.column = 1
+		} else {
+			l.column++
+		}
 		return
-}
+	}
 
 	// UTF-8 多字节字符路径
 	l.position = l.readPosition
 	r, width := utf8.DecodeRuneInString(l.input[l.readPosition:])
 	if r == utf8.RuneError && width == 1 {
 		// 无效的 UTF-8 序列，记录错误但继续处理
-		l.addError(LexerErrorTypeInvalidUTF8, fmt.Sprintf("无效的 UTF-8 序列在位置 %d", l.readPosition), 
+		l.addError(LexerErrorTypeInvalidUTF8, fmt.Sprintf("无效的 UTF-8 序列在位置 %d", l.readPosition),
 			string(l.input[l.readPosition]), l.line, l.column)
 		// 当作单个字节处理
 		l.ch = l.input[l.readPosition]
@@ -84,7 +84,7 @@ func (l *Lexer) readChar() {
 			l.ch = 0
 		}
 	}
-	
+
 	// 更新行号和列号
 	if l.chRune == '\n' {
 		l.line++
@@ -102,7 +102,7 @@ func (l *Lexer) peekChar() byte {
 	}
 	// 快速路径：ASCII 字符
 	if l.input[l.readPosition] < 128 {
-	return l.input[l.readPosition]
+		return l.input[l.readPosition]
 	}
 	// 多字节字符返回 0（表示不是 ASCII）
 	return 0
@@ -288,7 +288,7 @@ func (l *Lexer) NextToken() Token {
 	case '=':
 		// = 字符应该已经在标识符读取时处理了（数组赋值 arr=(...)）
 		// 如果单独出现，作为非法字符
-		l.addError(LexerErrorTypeInvalidChar, fmt.Sprintf("无效字符 `%c'", l.ch), 
+		l.addError(LexerErrorTypeInvalidChar, fmt.Sprintf("无效字符 `%c'", l.ch),
 			string(l.ch), tok.Line, tok.Column)
 		tok = newToken(ILLEGAL, l.ch, tok.Line, tok.Column)
 	case '\'':
@@ -382,10 +382,10 @@ func (l *Lexer) NextToken() Token {
 		// 检查是否真的到达文件末尾（chRune 也为 0）
 		// 如果 chRune 不为 0，说明是多字节字符，应该进入 default 分支处理
 		if l.chRune == 0 {
-		tok.Literal = ""
-		tok.Type = EOF
-		tok.Line = l.line
-		tok.Column = l.column
+			tok.Literal = ""
+			tok.Type = EOF
+			tok.Line = l.line
+			tok.Column = l.column
 		} else {
 			// 多字节字符，进入 default 分支处理
 			// 这里不返回，让代码继续到 default 分支
@@ -501,7 +501,7 @@ func (l *Lexer) NextToken() Token {
 				tok.Column = l.column
 				return tok
 			}
-			l.addError(LexerErrorTypeInvalidChar, fmt.Sprintf("无效字符 `%c'", l.ch), 
+			l.addError(LexerErrorTypeInvalidChar, fmt.Sprintf("无效字符 `%c'", l.ch),
 				string(l.ch), tok.Line, tok.Column)
 			tok = newToken(ILLEGAL, l.ch, tok.Line, tok.Column)
 		}
@@ -534,7 +534,7 @@ func (l *Lexer) readIdentifier() string {
 			if l.chWidth > 0 {
 				nextPosition = l.position + l.chWidth
 			}
-		l.readChar()
+			l.readChar()
 			// 检查下一个字符是否匹配
 			if !(unicode.IsLetter(l.chRune) || unicode.IsDigit(l.chRune) || l.chRune == '_') {
 				// 下一个字符不匹配，使用之前保存的位置作为结束位置
@@ -554,8 +554,8 @@ func (l *Lexer) readIdentifierOrPath() string {
 	position := l.position
 	for l.chRune != 0 {
 		// 检查是否是分隔符（使用 rune 比较以支持多字节字符）
-		if l.chRune == ' ' || 
-			l.chRune == '\t' || 
+		if l.chRune == ' ' ||
+			l.chRune == '\t' ||
 			l.chRune == '\n' ||
 			l.chRune == '\r' ||
 			l.chRune == '|' ||
@@ -580,9 +580,9 @@ func (l *Lexer) readIdentifierOrPath() string {
 		currentEnd := l.readPosition
 		l.readChar()
 		// 检查下一个字符是否是分隔符
-		if l.chRune == 0 || 
-			l.chRune == ' ' || 
-			l.chRune == '\t' || 
+		if l.chRune == 0 ||
+			l.chRune == ' ' ||
+			l.chRune == '\t' ||
 			l.chRune == '\n' ||
 			l.chRune == '\r' ||
 			l.chRune == '|' ||
@@ -621,7 +621,7 @@ func (l *Lexer) readNumber() string {
 		if !isDigit(l.ch) {
 			// 下一个字符不是数字，使用之前保存的结束位置
 			return l.input[position:currentEnd]
-	}
+		}
 	}
 	// 当字符不匹配时，l.position 指向当前字符的开始位置（不匹配的字符）
 	// 这就是最后一个匹配字符的结束位置
@@ -790,7 +790,7 @@ func (l *Lexer) readVariable() Token {
 			if unicode.IsLetter(l.chRune) || unicode.IsDigit(l.chRune) || l.chRune == '_' {
 				// 保存当前字符的结束位置
 				currentEnd := l.readPosition
-			l.readChar()
+				l.readChar()
 				// 检查下一个字符是否匹配
 				if !(unicode.IsLetter(l.chRune) || unicode.IsDigit(l.chRune) || l.chRune == '_') {
 					// 下一个字符不匹配，使用之前保存的结束位置
@@ -859,7 +859,7 @@ func (l *Lexer) readString(quote byte) Token {
 	startLine := l.line
 	startColumn := l.column
 	quoteRune := rune(quote) // 将引号转换为 rune 以支持多字节引号字符
-	l.readChar() // 跳过开始的引号
+	l.readChar()             // 跳过开始的引号
 
 	var literal strings.Builder
 	
@@ -872,8 +872,9 @@ func (l *Lexer) readString(quote byte) Token {
 				if nextCh == '"' {
 					// \" 转义为 "，只保存 " 而不保存 \
 					literal.WriteByte('"')
-					l.readChar() // 跳过 \
-					l.readChar() // 跳过 "
+					l.readChar() // 跳过 \，移动到 "
+					l.readChar() // 跳过 "，移动到下一个字符
+					// 处理 \" 后，继续循环处理下一个字符
 					continue
 				} else if nextCh == '\n' {
 					// \n 转义为换行符，保留换行符但跳过反斜杠
@@ -891,7 +892,7 @@ func (l *Lexer) readString(quote byte) Token {
 					// 其他转义序列保持原样（\$、\t等）
 					literal.WriteByte(l.ch) // 写入 \
 					l.readChar()
-					if l.chRune != 0 && l.chRune != quoteRune {
+					if l.chRune != 0 {
 						// 使用 WriteRune 支持多字节字符
 						literal.WriteRune(l.chRune)
 						l.readChar()
@@ -900,13 +901,13 @@ func (l *Lexer) readString(quote byte) Token {
 				}
 			}
 		}
-		
+
 		// 检查是否匹配结束引号（使用 rune 比较以支持多字节字符）
 		if l.chRune == quoteRune {
 			// 找到结束引号
 			break
 		}
-		
+
 		// 普通字符（包括空白字符和多字节字符，引号内的空白字符应该被保留）
 		// 使用 WriteRune 支持多字节字符
 		literal.WriteRune(l.chRune)
@@ -921,7 +922,7 @@ func (l *Lexer) readString(quote byte) Token {
 		// 未闭合的引号
 		result = literal.String()
 		quoteChar := string(quote)
-		l.addError(LexerErrorTypeUnclosedQuote, fmt.Sprintf("未闭合的引号 `%s'", quoteChar), 
+		l.addError(LexerErrorTypeUnclosedQuote, fmt.Sprintf("未闭合的引号 `%s'", quoteChar),
 			quoteChar, startLine, startColumn)
 	}
 
@@ -939,10 +940,10 @@ func (l *Lexer) readCommandSubstitution() Token {
 	startLine := l.line
 	startColumn := l.column
 	l.readChar() // 跳过开始的反引号
-	
+
 	var literal strings.Builder
 	backtickDepth := 1 // 反引号深度（支持嵌套的反引号，虽然 bash 不支持，但为了健壮性）
-	
+
 	for backtickDepth > 0 && l.ch != 0 {
 		if l.ch == '`' {
 			// 检查是否是转义的反引号
@@ -996,9 +997,9 @@ func (l *Lexer) readCommandSubstitution() Token {
 		} else if l.ch == '$' && l.peekChar() == '(' {
 			// 嵌套的命令替换 $(...)，需要正确处理
 			literal.WriteByte(l.ch)
-			l.readChar() // 跳过 $
+			l.readChar()            // 跳过 $
 			literal.WriteByte(l.ch) // 写入 (
-			l.readChar() // 跳过 (
+			l.readChar()            // 跳过 (
 			parenDepth := 1
 			for parenDepth > 0 && l.ch != 0 {
 				if l.ch == '(' {
@@ -1045,7 +1046,7 @@ func (l *Lexer) readCommandSubstitution() Token {
 			l.readChar()
 		}
 	}
-	
+
 	return Token{
 		Type:    COMMAND_SUBSTITUTION,
 		Literal: literal.String(),
@@ -1059,7 +1060,7 @@ func (l *Lexer) readCommandSubstitution() Token {
 func (l *Lexer) readArithmeticExpansion() Token {
 	var literal strings.Builder
 	depth := 2 // 已经有两个开括号
-	
+
 	for depth > 0 && l.ch != 0 {
 		if l.ch == '(' {
 			depth++
@@ -1116,11 +1117,11 @@ func (l *Lexer) readArithmeticExpansion() Token {
 			if peek2 == '(' {
 				// $((...)) 嵌套的算术展开，需要完整保留包括结束的 ))
 				literal.WriteByte(l.ch)
-				l.readChar() // 跳过 $
+				l.readChar()            // 跳过 $
 				literal.WriteByte(l.ch) // 写入第一个 (
-				l.readChar() // 跳过第一个 (
+				l.readChar()            // 跳过第一个 (
 				literal.WriteByte(l.ch) // 写入第二个 (
-				l.readChar() // 跳过第二个 (
+				l.readChar()            // 跳过第二个 (
 				nestedDepth := 2
 				for nestedDepth > 0 && l.ch != 0 {
 					if l.ch == '(' {
@@ -1160,9 +1161,9 @@ func (l *Lexer) readArithmeticExpansion() Token {
 			} else {
 				// $(...) 命令替换（在算术展开中）
 				literal.WriteByte(l.ch)
-				l.readChar() // 跳过 $
+				l.readChar()            // 跳过 $
 				literal.WriteByte(l.ch) // 写入 (
-				l.readChar() // 跳过 (
+				l.readChar()            // 跳过 (
 				nestedDepth := 1
 				for nestedDepth > 0 && l.ch != 0 {
 					if l.ch == '(' {
@@ -1209,7 +1210,7 @@ func (l *Lexer) readArithmeticExpansion() Token {
 			l.readChar()
 		}
 	}
-	
+
 	return Token{
 		Type:    ARITHMETIC_EXPANSION,
 		Literal: literal.String(),
@@ -1223,7 +1224,7 @@ func (l *Lexer) readArithmeticExpansion() Token {
 func (l *Lexer) readCommandSubstitutionParen() Token {
 	var literal strings.Builder
 	depth := 1 // 已经有一个开括号
-	
+
 	for depth > 0 && l.ch != 0 {
 		if l.ch == '(' {
 			depth++
@@ -1286,9 +1287,9 @@ func (l *Lexer) readCommandSubstitutionParen() Token {
 		} else if l.ch == '$' && l.peekChar() == '(' {
 			// 嵌套的 $(...) 命令替换
 			literal.WriteByte(l.ch)
-			l.readChar() // 跳过 $
+			l.readChar()            // 跳过 $
 			literal.WriteByte(l.ch) // 写入 (
-			l.readChar() // 跳过 (
+			l.readChar()            // 跳过 (
 			nestedDepth := 1
 			for nestedDepth > 0 && l.ch != 0 {
 				if l.ch == '(' {
@@ -1343,7 +1344,7 @@ func (l *Lexer) readCommandSubstitutionParen() Token {
 			l.readChar()
 		}
 	}
-	
+
 	return Token{
 		Type:    COMMAND_SUBSTITUTION,
 		Literal: literal.String(),
@@ -1357,7 +1358,7 @@ func (l *Lexer) readDollarSingleQuote() Token {
 	startLine := l.line
 	startColumn := l.column
 	var literal strings.Builder
-	
+
 	for l.ch != 0 {
 		if l.ch == '\'' {
 			// 找到结束引号
@@ -1425,12 +1426,12 @@ func (l *Lexer) readDollarSingleQuote() Token {
 			l.readChar()
 		}
 	}
-	
+
 	// 检查是否未闭合
 	if l.ch == 0 {
 		l.addError(LexerErrorTypeUnclosedString, "未闭合的 $'...' 字符串", "'", startLine, startColumn)
 	}
-	
+
 	return Token{
 		Type:    STRING_DOLLAR_SINGLE,
 		Literal: literal.String(),
@@ -1444,7 +1445,7 @@ func (l *Lexer) readDollarDoubleQuote() Token {
 	startLine := l.line
 	startColumn := l.column
 	var literal strings.Builder
-	
+
 	for l.ch != 0 {
 		if l.ch == '"' {
 			// 找到结束引号
@@ -1476,12 +1477,12 @@ func (l *Lexer) readDollarDoubleQuote() Token {
 			l.readChar()
 		}
 	}
-	
+
 	// 检查是否未闭合
 	if l.ch == 0 {
 		l.addError(LexerErrorTypeUnclosedString, "未闭合的 $\"...\" 字符串", "\"", startLine, startColumn)
 	}
-	
+
 	return Token{
 		Type:    STRING_DOLLAR_DOUBLE,
 		Literal: literal.String(),
@@ -1494,7 +1495,7 @@ func (l *Lexer) readDollarDoubleQuote() Token {
 func (l *Lexer) readProcessSubstitution() Token {
 	var literal strings.Builder
 	depth := 1 // 已经有一个开括号
-	
+
 	for depth > 0 && l.ch != 0 {
 		if l.ch == '(' {
 			depth++
@@ -1523,7 +1524,7 @@ func (l *Lexer) readProcessSubstitution() Token {
 			l.readChar()
 		}
 	}
-	
+
 	return Token{
 		Type:    PROCESS_SUBSTITUTION_IN, // 临时类型，实际类型由调用者设置
 		Literal: literal.String(),
@@ -1589,4 +1590,3 @@ func isHexDigit(ch byte) bool {
 func isOctDigit(ch byte) bool {
 	return '0' <= ch && ch <= '7'
 }
-

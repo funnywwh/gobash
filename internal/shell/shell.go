@@ -739,13 +739,27 @@ func splitCommands(line string) []string {
 	for i := 0; i < len(line); i++ {
 		ch := line[i]
 
-		// 在引号内，转义字符应该保留（由 lexer 处理）
-		// 在引号外，转义字符用于转义分号等，需要处理
-		if ch == '\\' && i+1 < len(line) && !inQuotes {
-			// 转义字符（不在引号内）
-			current.WriteByte(line[i+1])
-			i++
-			continue
+		// 处理转义字符
+		if ch == '\\' && i+1 < len(line) {
+			if !inQuotes {
+				// 在引号外，转义字符用于转义分号等，需要处理
+				current.WriteByte(line[i+1])
+				i++
+				continue
+			} else {
+				// 在引号内，转义字符应该保留（由 lexer 处理）
+				// 但需要检查是否是转义的引号（如 \"），如果是，跳过不当作引号结束
+				if line[i+1] == quoteChar {
+					// 转义的引号，保留 \ 和引号，继续
+					current.WriteByte(ch)
+					current.WriteByte(line[i+1])
+					i++
+					continue
+				}
+				// 其他转义字符，保留
+				current.WriteByte(ch)
+				continue
+			}
 		}
 
 		if (ch == '"' || ch == '\'') && !inQuotes {

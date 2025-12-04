@@ -1574,18 +1574,48 @@ func (e *Executor) expandVariablesInString(s string) string {
 	var result strings.Builder
 	i := 0
 	for i < len(s) {
-		// 处理转义序列（除了 \$，\$ 留给变量展开处理）
+		// 处理转义序列
 		if s[i] == '\\' && i+1 < len(s) {
 			escaped := s[i+1]
 
 			if escaped == '$' {
-				// \$ 转义：保留 \，然后继续处理 $（会在下面的 $ 处理中检查前面是否有 \）
-				result.WriteByte('\\')
-				i++ // 只跳过 \，不跳过 $，让 $ 进入下面的处理
+				// \$ 转义：直接输出字面量 $，不输出 \
+				result.WriteByte('$')
+				i += 2 // 跳过 \ 和 $
+
+				// 如果后面是 $((...)) 格式，需要完整保留作为字面量
+				if i+1 < len(s) && s[i] == '(' && s[i+1] == '(' {
+					result.WriteString("((")
+					i += 2
+					// 找到匹配的 ))
+					parenDepth := 0
+					for i < len(s) {
+						if s[i] == '(' {
+							parenDepth++
+							result.WriteByte(s[i])
+							i++
+						} else if s[i] == ')' {
+							result.WriteByte(s[i])
+							i++
+							if parenDepth == 0 && i < len(s) && s[i] == ')' {
+								result.WriteByte(s[i])
+								i++
+								break
+							} else if parenDepth > 0 {
+								parenDepth--
+							}
+						} else {
+							result.WriteByte(s[i])
+							i++
+						}
+					}
+				}
+				continue
 			} else if escaped == '"' {
 				// \" 转义：只输出 "，不输出 \
 				result.WriteByte('"')
 				i += 2 // 跳过 \ 和 "
+				continue
 			} else {
 				i += 2 // 跳过 \ 和转义字符
 				switch escaped {
@@ -1640,54 +1670,7 @@ func (e *Executor) expandVariablesInString(s string) string {
 				continue
 			}
 
-			// 检查 result 中最后一个字符是否是转义的 \
-			if result.Len() > 0 {
-				resultStr := result.String()
-				lastChar := resultStr[len(resultStr)-1]
-				if lastChar == '\\' {
-					// 前面有 \，这是转义的 $，删除 result 中的 \，输出字面量 $ 并跳过后面的变量名（不展开）
-					resultWithoutBackslash := resultStr[:len(resultStr)-1]
-					result.Reset()
-					result.WriteString(resultWithoutBackslash)
-					result.WriteByte('$')
-					i++ // 跳过 $，现在 i 指向 $ 后面的字符（比如 '1'）
-					// 跳过后面的变量名部分，但不展开
-					if i < len(s) {
-						// 处理特殊变量 $#, $@, $*, $?, $!, $$, $0
-						if s[i] == '#' || s[i] == '@' || s[i] == '*' || s[i] == '?' || s[i] == '!' || s[i] == '$' || s[i] == '0' {
-							result.WriteByte(s[i])
-							i++
-						} else if isDigit(s[i]) {
-							// $1, $2, ... 位置参数
-							for i < len(s) && isDigit(s[i]) {
-								result.WriteByte(s[i])
-								i++
-							}
-						} else if s[i] == '{' {
-							// ${VAR} 格式
-							result.WriteByte(s[i])
-							i++
-							for i < len(s) && s[i] != '}' {
-								result.WriteByte(s[i])
-								i++
-							}
-							if i < len(s) && s[i] == '}' {
-								result.WriteByte(s[i])
-								i++
-							}
-						} else if isLetter(s[i]) || s[i] == '_' {
-							// $VAR 格式
-							for i < len(s) && (isLetter(s[i]) || isDigit(s[i]) || s[i] == '_' || s[i] == '[' || s[i] == ']') {
-								result.WriteByte(s[i])
-								i++
-							}
-						}
-					}
-					continue
-				}
-			}
-
-			// 前面没有 \，正常展开变量
+			// 正常展开变量
 			// 处理变量展开
 			var varName strings.Builder
 
@@ -2812,7 +2795,7 @@ func parseArithmeticStringArg(expr string, pos *int, e *Executor) (string, error
 	// 检查是否是变量展开 $VAR、${VAR}、${VAR:-default}、$(command)、$((expr)) 等
 	if expr[*pos] == '$' {
 		startPos := *pos // 记录 $ 的位置
-		*pos++ // 跳过 $
+		*pos++           // 跳过 $
 
 		// 检查是否是算术展开 $((...))
 		if *pos < len(expr) && expr[*pos] == '(' && *pos+1 < len(expr) && expr[*pos+1] == '(' {
@@ -2912,8 +2895,8 @@ func parseArithmeticStringArg(expr string, pos *int, e *Executor) (string, error
 		varEndPos := *pos
 		if *pos < len(expr) {
 			// 处理特殊变量
-			if expr[*pos] == '#' || expr[*pos] == '@' || expr[*pos] == '*' || 
-			   expr[*pos] == '?' || expr[*pos] == '!' || expr[*pos] == '$' || expr[*pos] == '0' {
+			if expr[*pos] == '#' || expr[*pos] == '@' || expr[*pos] == '*' ||
+				expr[*pos] == '?' || expr[*pos] == '!' || expr[*pos] == '$' || expr[*pos] == '0' {
 				varEndPos = *pos + 1
 			} else if isDigitArith(expr[*pos]) {
 				// 位置参数 $1, $2, ...
@@ -2922,9 +2905,9 @@ func parseArithmeticStringArg(expr string, pos *int, e *Executor) (string, error
 				}
 			} else if isLetterArith(expr[*pos]) || expr[*pos] == '_' {
 				// 普通变量 $VAR
-				for varEndPos < len(expr) && 
-					(isLetterArith(expr[varEndPos]) || isDigitArith(expr[varEndPos]) || 
-					 expr[varEndPos] == '_' || expr[varEndPos] == '[' || expr[varEndPos] == ']') {
+				for varEndPos < len(expr) &&
+					(isLetterArith(expr[varEndPos]) || isDigitArith(expr[varEndPos]) ||
+						expr[varEndPos] == '_' || expr[varEndPos] == '[' || expr[varEndPos] == ']') {
 					varEndPos++
 				}
 			} else {
