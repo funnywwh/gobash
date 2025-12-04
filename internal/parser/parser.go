@@ -1006,13 +1006,15 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 
 	stmtCount := 0
 	for p.curToken.Type != lexer.EOF &&
+		p.curToken.Type != lexer.RBRACE &&
 		p.curToken.Type != lexer.FI &&
 		p.curToken.Type != lexer.DONE &&
 		p.curToken.Type != lexer.ELSE &&
 		p.curToken.Type != lexer.ELIF &&
 		p.curToken.Type != lexer.ESAC {
 		// 如果遇到结束标记，停止解析
-		if p.curToken.Type == lexer.FI ||
+		if p.curToken.Type == lexer.RBRACE ||
+		   p.curToken.Type == lexer.FI ||
 		   p.curToken.Type == lexer.DONE ||
 		   p.curToken.Type == lexer.ELSE ||
 		   p.curToken.Type == lexer.ELIF ||
@@ -1030,7 +1032,8 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 			block.Statements = append(block.Statements, stmt)
 		}
 		// 如果解析后遇到结束标记，停止解析
-		if p.curToken.Type == lexer.FI ||
+		if p.curToken.Type == lexer.RBRACE ||
+		   p.curToken.Type == lexer.FI ||
 		   p.curToken.Type == lexer.DONE ||
 		   p.curToken.Type == lexer.ELSE ||
 		   p.curToken.Type == lexer.ELIF ||
@@ -1043,7 +1046,8 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 		if p.curToken.Type == lexer.WHITESPACE || p.curToken.Type == lexer.NEWLINE {
 			p.nextToken()
 			// 跳过 NEWLINE 后，检查是否是结束标记
-			if p.curToken.Type == lexer.FI ||
+			if p.curToken.Type == lexer.RBRACE ||
+			   p.curToken.Type == lexer.FI ||
 			   p.curToken.Type == lexer.DONE ||
 			   p.curToken.Type == lexer.ELSE ||
 			   p.curToken.Type == lexer.ELIF ||
