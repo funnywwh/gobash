@@ -163,6 +163,30 @@ func (p *Parser) parseStatement() Statement {
 		p.nextToken()
 		return p.parseStatement()
 	default:
+		// 先检查是否是函数定义格式 name() { ... }
+		// 必须在数组赋值检查之前，因为函数定义也是 IDENTIFIER + LPAREN
+		if p.curToken.Type == lexer.IDENTIFIER && p.peekToken.Type == lexer.LPAREN {
+			// 保存当前状态
+			name := p.curToken.Literal
+			savedCur := p.curToken
+			savedPeek := p.peekToken
+			
+			p.nextToken() // 跳过 (
+			if p.curToken.Type == lexer.RPAREN {
+				p.nextToken() // 跳过 )
+				if p.curToken.Type == lexer.LBRACE {
+					// 这是函数定义
+					stmt := &FunctionStatement{Name: name}
+					p.nextToken() // 跳过 {
+					stmt.Body = p.parseBlockStatement()
+					return stmt
+				}
+			}
+			// 不是函数定义，恢复状态
+			p.curToken = savedCur
+			p.peekToken = savedPeek
+		}
+		
 		// 检查是否是数组赋值 arr=(1 2 3)
 		// 注意：lexer可能将 arr= 识别为一个IDENTIFIER，所以需要检查是否以 = 结尾
 		var isArrayAssignment bool
@@ -322,28 +346,6 @@ func (p *Parser) parseStatement() Statement {
 			return stmt
 		}
 		
-		// 检查是否是函数定义格式 name() { ... }
-		if p.curToken.Type == lexer.IDENTIFIER && p.peekToken.Type == lexer.LPAREN {
-			// 保存当前状态
-			name := p.curToken.Literal
-			savedCur := p.curToken
-			savedPeek := p.peekToken
-			
-			p.nextToken() // 跳过 (
-			if p.curToken.Type == lexer.RPAREN {
-				p.nextToken() // 跳过 )
-				if p.curToken.Type == lexer.LBRACE {
-					// 这是函数定义
-					stmt := &FunctionStatement{Name: name}
-					p.nextToken() // 跳过 {
-					stmt.Body = p.parseBlockStatement()
-					return stmt
-				}
-			}
-			// 不是函数定义，恢复状态
-			p.curToken = savedCur
-			p.peekToken = savedPeek
-		}
 		return p.parseCommandStatement()
 	}
 }
