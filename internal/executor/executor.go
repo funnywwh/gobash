@@ -362,15 +362,7 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 	}
 
 	// 检查是否为定义的函数
-	fmt.Fprintf(os.Stderr, "[DEBUG] 检查函数: %s, 已定义函数: %v\n", cmdName, func() []string {
-		keys := make([]string, 0, len(e.functions))
-		for k := range e.functions {
-			keys = append(keys, k)
-		}
-		return keys
-	}())
 	if fn, ok := e.functions[cmdName]; ok {
-		fmt.Fprintf(os.Stderr, "[DEBUG] 找到函数: %s\n", cmdName)
 		return e.executeFunction(fn, cmd.Args)
 	}
 
@@ -2183,7 +2175,7 @@ func (e *Executor) expandVariablesInArithmeticExpression(s string) string {
 				i++
 			}
 			varName := s[start:i]
-			
+
 			// 检查是否是运算符或关键字（如 and, or, not 等）
 			// 如果是运算符，不展开
 			operators := []string{"and", "or", "not", "eq", "ne", "lt", "le", "gt", "ge"}
@@ -2194,7 +2186,7 @@ func (e *Executor) expandVariablesInArithmeticExpression(s string) string {
 					break
 				}
 			}
-			
+
 			if !isOperator {
 				// 获取变量值
 				varValue := e.env[varName]
