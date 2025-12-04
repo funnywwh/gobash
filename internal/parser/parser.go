@@ -180,7 +180,8 @@ func (p *Parser) parseStatement() Statement {
 					// 这是函数定义
 					stmt := &FunctionStatement{Name: name}
 					p.nextToken() // 跳过 {
-					stmt.Body = p.parseBlockStatement()
+					// 函数体不应该在 FI 时停止，因为函数体中可能有 if 语句
+					stmt.Body = p.parseBlockStatementWithStopOnFI(false)
 					return stmt
 				}
 			}
@@ -994,27 +995,35 @@ func (p *Parser) parseFunctionStatement() *FunctionStatement {
 	}
 
 	p.nextToken()
-	stmt.Body = p.parseBlockStatement()
+	// 函数体不应该在 FI 时停止，因为函数体中可能有 if 语句
+	stmt.Body = p.parseBlockStatementWithStopOnFI(false)
 
 	return stmt
 }
 
 // parseBlockStatement 解析代码块
+// stopOnFI: 如果为 true，在遇到 FI 时停止（用于 if/then 块）
+// 如果为 false，在遇到 FI 时不停止（用于函数体）
 func (p *Parser) parseBlockStatement() *BlockStatement {
+	return p.parseBlockStatementWithStopOnFI(true)
+}
+
+// parseBlockStatementWithStopOnFI 解析代码块，支持控制是否在 FI 时停止
+func (p *Parser) parseBlockStatementWithStopOnFI(stopOnFI bool) *BlockStatement {
 	block := &BlockStatement{}
 	block.Statements = []Statement{}
 
 	stmtCount := 0
 	for p.curToken.Type != lexer.EOF &&
 		p.curToken.Type != lexer.RBRACE &&
-		p.curToken.Type != lexer.FI &&
+		(!stopOnFI || p.curToken.Type != lexer.FI) &&
 		p.curToken.Type != lexer.DONE &&
 		p.curToken.Type != lexer.ELSE &&
 		p.curToken.Type != lexer.ELIF &&
 		p.curToken.Type != lexer.ESAC {
 		// 如果遇到结束标记，停止解析
 		if p.curToken.Type == lexer.RBRACE ||
-		   p.curToken.Type == lexer.FI ||
+		   (stopOnFI && p.curToken.Type == lexer.FI) ||
 		   p.curToken.Type == lexer.DONE ||
 		   p.curToken.Type == lexer.ELSE ||
 		   p.curToken.Type == lexer.ELIF ||
@@ -1033,7 +1042,7 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 		}
 		// 如果解析后遇到结束标记，停止解析
 		if p.curToken.Type == lexer.RBRACE ||
-		   p.curToken.Type == lexer.FI ||
+		   (stopOnFI && p.curToken.Type == lexer.FI) ||
 		   p.curToken.Type == lexer.DONE ||
 		   p.curToken.Type == lexer.ELSE ||
 		   p.curToken.Type == lexer.ELIF ||
@@ -1047,7 +1056,7 @@ func (p *Parser) parseBlockStatement() *BlockStatement {
 			p.nextToken()
 			// 跳过 NEWLINE 后，检查是否是结束标记
 			if p.curToken.Type == lexer.RBRACE ||
-			   p.curToken.Type == lexer.FI ||
+			   (stopOnFI && p.curToken.Type == lexer.FI) ||
 			   p.curToken.Type == lexer.DONE ||
 			   p.curToken.Type == lexer.ELSE ||
 			   p.curToken.Type == lexer.ELIF ||
