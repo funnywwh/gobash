@@ -852,17 +852,22 @@ func (p *Parser) parseIfStatement() *IfStatement {
 	if p.peekToken.Type == lexer.ELSE {
 		p.nextToken() // 跳过 else
 		p.nextToken()
+		// else 块也应该在 FI 时停止
 		stmt.Alternative = p.parseBlockStatement()
 	}
 
 	// 检查并跳过 fi
 	// 注意：parseBlockStatement 在遇到 FI 时会停止，所以 curToken 应该在 FI 上
+	// 跳过空白字符
+	for p.curToken.Type == lexer.WHITESPACE || p.curToken.Type == lexer.NEWLINE {
+		p.nextToken()
+	}
 	if p.curToken.Type == lexer.FI {
 		p.nextToken() // 跳过 fi
 	} else if p.peekToken.Type == lexer.FI {
 		p.nextToken() // 跳过 fi
-	} else if p.curToken.Type != lexer.EOF {
-		// 未闭合的 if 语句
+	} else if p.curToken.Type != lexer.EOF && p.curToken.Type != lexer.RBRACE {
+		// 未闭合的 if 语句（但如果在 RBRACE 上，可能是函数体结束）
 		p.addError(ErrorTypeUnclosedControlFlow, "if 语句未闭合，缺少 fi", p.curToken, "fi")
 	}
 
