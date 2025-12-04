@@ -2076,7 +2076,8 @@ func (e *Executor) evaluateArithmetic(expr string) string {
 }
 
 // expandVariablesInArithmeticExpression 在算术表达式中展开变量，但保留引号
-// 这个函数专门用于算术表达式，它只展开 $VAR 格式的变量，但保留字符串字面量的引号
+// 这个函数专门用于算术表达式，它展开 $VAR 格式的变量，也展开没有 $ 前缀的变量名（算术展开的特殊规则）
+// 在算术展开 $((...)) 中，变量名可以直接使用，不需要 $ 前缀
 func (e *Executor) expandVariablesInArithmeticExpression(s string) string {
 	if len(s) == 0 {
 		return ""
@@ -2109,7 +2110,7 @@ func (e *Executor) expandVariablesInArithmeticExpression(s string) string {
 			continue
 		}
 
-		// 处理变量展开 $VAR
+		// 处理变量展开 $VAR 或直接变量名（算术展开中变量名可以直接使用）
 		if s[i] == '$' && i+1 < len(s) {
 			// 检查是否是 $VAR 格式（不是 $((...))）
 			if i+2 < len(s) && s[i+1] == '(' && s[i+2] == '(' {
@@ -2155,6 +2156,50 @@ func (e *Executor) expandVariablesInArithmeticExpression(s string) string {
 			} else {
 				result.WriteByte(s[i])
 				i++
+			}
+			continue
+		}
+
+		// 检查是否是变量名（没有 $ 前缀，算术展开的特殊规则）
+		// 变量名必须以字母或下划线开头，后面可以跟字母、数字或下划线
+		if (s[i] >= 'a' && s[i] <= 'z') || (s[i] >= 'A' && s[i] <= 'Z') || s[i] == '_' {
+			// 提取变量名
+			start := i
+			for i < len(s) && ((s[i] >= 'a' && s[i] <= 'z') ||
+				(s[i] >= 'A' && s[i] <= 'Z') ||
+				(s[i] >= '0' && s[i] <= '9') ||
+				s[i] == '_') {
+				i++
+			}
+			varName := s[start:i]
+			
+			// 检查是否是运算符或关键字（如 and, or, not 等）
+			// 如果是运算符，不展开
+			operators := []string{"and", "or", "not", "eq", "ne", "lt", "le", "gt", "ge"}
+			isOperator := false
+			for _, op := range operators {
+				if varName == op {
+					isOperator = true
+					break
+				}
+			}
+			
+			if !isOperator {
+				// 获取变量值
+				varValue := e.env[varName]
+				if varValue == "" {
+					varValue = os.Getenv(varName)
+				}
+				// 如果变量值不为空，展开它；如果为空，保留变量名（可能是未定义的变量）
+				if varValue != "" {
+					result.WriteString(varValue)
+				} else {
+					// 未定义的变量，在算术表达式中应该被视为 0
+					result.WriteString("0")
+				}
+			} else {
+				// 是运算符，保留原样
+				result.WriteString(varName)
 			}
 			continue
 		}
