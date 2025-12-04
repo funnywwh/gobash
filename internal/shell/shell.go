@@ -490,6 +490,57 @@ func (s *Shell) isStatementComplete(statement string) bool {
 		}
 	}
 
+	// 检查函数定义 name() { ... }
+	// 函数定义格式：name() { ... } 或 function name() { ... }
+	// 需要检查是否有未闭合的大括号
+	braceCount := 0
+	inQuotes := false
+	quoteChar := byte(0)
+	for i := 0; i < len(statement); i++ {
+		ch := statement[i]
+		
+		// 处理转义字符
+		if ch == '\\' && i+1 < len(statement) {
+			if !inQuotes {
+				// 在引号外，转义字符用于转义下一个字符
+				i++ // 跳过转义字符和下一个字符
+				continue
+			} else {
+				// 在引号内，转义字符应该保留
+				if i+1 < len(statement) && statement[i+1] == quoteChar {
+					// 转义的引号，不改变引号状态
+					i++
+					continue
+				}
+				// 其他转义字符，保留
+				continue
+			}
+		}
+		
+		// 处理引号
+		if (ch == '"' || ch == '\'') && !inQuotes {
+			inQuotes = true
+			quoteChar = ch
+		} else if ch == quoteChar && inQuotes {
+			inQuotes = false
+			quoteChar = 0
+		}
+		
+		// 只统计引号外的大括号
+		if !inQuotes {
+			if ch == '{' {
+				braceCount++
+			} else if ch == '}' {
+				braceCount--
+			}
+		}
+	}
+	
+	// 如果有未闭合的大括号，语句未完成
+	if braceCount > 0 {
+		return false
+	}
+
 	return true
 }
 
@@ -735,6 +786,7 @@ func splitCommands(line string) []string {
 	var current strings.Builder
 	inQuotes := false
 	quoteChar := byte(0)
+	braceDepth := 0 // 大括号深度，用于跟踪函数定义和代码块
 
 	for i := 0; i < len(line); i++ {
 		ch := line[i]
@@ -770,48 +822,59 @@ func splitCommands(line string) []string {
 			inQuotes = false
 			quoteChar = 0
 			current.WriteByte(ch)
-		} else if ch == ';' && !inQuotes {
-			// 检查是否是双分号 ;;（case语句的结束符）
-			if i+1 < len(line) && line[i+1] == ';' {
-				// 双分号，不分割命令，将 ;; 作为当前命令的一部分
+		} else if !inQuotes {
+			// 跟踪大括号深度（只在引号外）
+			if ch == '{' {
+				braceDepth++
 				current.WriteByte(ch)
-				current.WriteByte(line[i+1])
-				i++ // 跳过第二个分号
-				continue
-			}
-
-			// 检查分号后的单词是否是控制流关键字（do、then等）
-			// 如果是，这个分号不应该分割命令
-			remaining := line[i+1:]
-			remaining = strings.TrimSpace(remaining)
-			// 获取分号后的第一个单词
-			nextWord := ""
-			if len(remaining) > 0 {
-				parts := strings.Fields(remaining)
-				if len(parts) > 0 {
-					nextWord = strings.ToLower(parts[0])
+			} else if ch == '}' {
+				braceDepth--
+				current.WriteByte(ch)
+			} else if ch == ';' && braceDepth == 0 {
+				// 检查是否是双分号 ;;（case语句的结束符）
+				if i+1 < len(line) && line[i+1] == ';' {
+					// 双分号，不分割命令，将 ;; 作为当前命令的一部分
+					current.WriteByte(ch)
+					current.WriteByte(line[i+1])
+					i++ // 跳过第二个分号
+					continue
 				}
-			}
 
-			// 控制流关键字列表（分号后可能出现的）
-			controlFlowAfterSemicolon := []string{"do", "then", "else", "elif"}
-			shouldSplit := true
-			for _, keyword := range controlFlowAfterSemicolon {
-				if nextWord == keyword {
-					shouldSplit = false
-					break
+				// 检查分号后的单词是否是控制流关键字（do、then等）
+				// 如果是，这个分号不应该分割命令
+				remaining := line[i+1:]
+				remaining = strings.TrimSpace(remaining)
+				// 获取分号后的第一个单词
+				nextWord := ""
+				if len(remaining) > 0 {
+					parts := strings.Fields(remaining)
+					if len(parts) > 0 {
+						nextWord = strings.ToLower(parts[0])
+					}
 				}
-			}
 
-			if shouldSplit {
-				// 分号且不在引号内，分割命令
-				cmd := strings.TrimSpace(current.String())
-				if cmd != "" {
-					commands = append(commands, cmd)
+				// 控制流关键字列表（分号后可能出现的）
+				controlFlowAfterSemicolon := []string{"do", "then", "else", "elif"}
+				shouldSplit := true
+				for _, keyword := range controlFlowAfterSemicolon {
+					if nextWord == keyword {
+						shouldSplit = false
+						break
+					}
 				}
-				current.Reset()
+
+				if shouldSplit {
+					// 分号且不在引号内，分割命令
+					cmd := strings.TrimSpace(current.String())
+					if cmd != "" {
+						commands = append(commands, cmd)
+					}
+					current.Reset()
+				} else {
+					// 分号后是控制流关键字，不分割，将分号作为当前命令的一部分
+					current.WriteByte(ch)
+				}
 			} else {
-				// 分号后是控制流关键字，不分割，将分号作为当前命令的一部分
 				current.WriteByte(ch)
 			}
 		} else {

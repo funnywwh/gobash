@@ -133,6 +133,9 @@ func (e *Executor) executeStatement(stmt parser.Statement) error {
 		return nil
 	case *parser.BlockStatement:
 		return e.executeBlock(s)
+	case *parser.GroupCommand:
+		// 命令组 { command; }，执行其中的命令
+		return e.executeBlock(s.Body)
 	case *parser.ArrayAssignmentStatement:
 		return e.executeArrayAssignment(s)
 	case *parser.CaseStatement:
