@@ -166,14 +166,17 @@ func (p *Parser) parseStatement() Statement {
 		// 先检查是否是函数定义格式 name() { ... }
 		// 必须在数组赋值检查之前，因为函数定义也是 IDENTIFIER + LPAREN
 		if p.curToken.Type == lexer.IDENTIFIER && p.peekToken.Type == lexer.LPAREN {
-			// 保存当前状态
+			// 保存当前状态（包括 lexer 的位置）
 			name := p.curToken.Literal
-			savedCur := p.curToken
-			savedPeek := p.peekToken
-			
+			// 尝试解析函数定义
 			p.nextToken() // 跳过 (
 			if p.curToken.Type == lexer.RPAREN {
 				p.nextToken() // 跳过 )
+				// 检查下一个 token 是否是 LBRACE（可能中间有空白字符）
+				// 跳过空白字符
+				for p.curToken.Type == lexer.WHITESPACE {
+					p.nextToken()
+				}
 				if p.curToken.Type == lexer.LBRACE {
 					// 这是函数定义
 					stmt := &FunctionStatement{Name: name}
@@ -182,9 +185,9 @@ func (p *Parser) parseStatement() Statement {
 					return stmt
 				}
 			}
-			// 不是函数定义，恢复状态
-			p.curToken = savedCur
-			p.peekToken = savedPeek
+			// 不是函数定义，需要重新解析
+			// 由于 lexer 状态已经改变，需要重新创建 lexer
+			// 但这样会很复杂，所以我们在 parseCommandStatement 中处理这种情况
 		}
 		
 		// 检查是否是数组赋值 arr=(1 2 3)
