@@ -831,7 +831,9 @@ func (p *Parser) parseIfStatement() *IfStatement {
 	}
 
 	p.nextToken()
-	stmt.Consequence = p.parseBlockStatement()
+	// consequence 块应该在遇到 elif 或 else 时停止（但需要考虑嵌套的 if）
+	// 使用专门的函数来解析，能够正确处理嵌套的 if 语句
+	stmt.Consequence = p.parseIfConsequence()
 
 	// 解析elif
 	for p.peekToken.Type == lexer.ELIF {
@@ -841,7 +843,9 @@ func (p *Parser) parseIfStatement() *IfStatement {
 			p.nextToken()
 		}
 		p.nextToken()
-		consequence := p.parseBlockStatement()
+		// 对于 elif 的 consequence，需要在遇到 else 或下一个 elif 时停止
+		// 使用专门的函数来解析，能够正确处理嵌套的 if 语句
+		consequence := p.parseIfConsequence()
 		stmt.Elif = append(stmt.Elif, &ElifClause{
 			Condition:   condition,
 			Consequence: consequence,
@@ -852,8 +856,8 @@ func (p *Parser) parseIfStatement() *IfStatement {
 	if p.peekToken.Type == lexer.ELSE {
 		p.nextToken() // 跳过 else
 		p.nextToken()
-		// else 块也应该在 FI 时停止
-		stmt.Alternative = p.parseBlockStatement()
+		// else 块应该在 FI 时停止，使用专门的函数来解析，能够正确处理嵌套的 if 语句
+		stmt.Alternative = p.parseIfAlternative()
 	}
 
 	// 检查并跳过 fi
@@ -1019,20 +1023,30 @@ func (p *Parser) parseBlockStatementWithStopOnFI(stopOnFI bool) *BlockStatement 
 	block.Statements = []Statement{}
 
 	stmtCount := 0
+	ifNestingLevel := 0 // 跟踪嵌套的 if 语句层级
+	var shouldStop bool
 	for p.curToken.Type != lexer.EOF &&
 		p.curToken.Type != lexer.RBRACE &&
-		(!stopOnFI || p.curToken.Type != lexer.FI) &&
 		p.curToken.Type != lexer.DONE &&
-		p.curToken.Type != lexer.ELSE &&
-		p.curToken.Type != lexer.ELIF &&
 		p.curToken.Type != lexer.ESAC {
-		// 如果遇到结束标记，停止解析
-		if p.curToken.Type == lexer.RBRACE ||
-		   (stopOnFI && p.curToken.Type == lexer.FI) ||
-		   p.curToken.Type == lexer.DONE ||
-		   p.curToken.Type == lexer.ELSE ||
-		   p.curToken.Type == lexer.ELIF ||
-		   p.curToken.Type == lexer.ESAC {
+		// 如果遇到结束标记，停止解析（但需要考虑嵌套的 if）
+		// FI: 只有在 stopOnFI 为 true 且 ifNestingLevel == 0 时才停止
+		// ELSE/ELIF: 只有在 ifNestingLevel == 0 且 stopOnFI 为 false 时才停止
+		//   (如果 stopOnFI 为 true，说明这是 else 块，不应该在遇到 else/elif 时停止)
+		shouldStop = false
+		if p.curToken.Type == lexer.RBRACE {
+			shouldStop = true
+		} else if stopOnFI && p.curToken.Type == lexer.FI && ifNestingLevel == 0 {
+			shouldStop = true
+		} else if p.curToken.Type == lexer.DONE {
+			shouldStop = true
+		} else if !stopOnFI && ifNestingLevel == 0 && (p.curToken.Type == lexer.ELSE || p.curToken.Type == lexer.ELIF) {
+			// 只有在 stopOnFI 为 false 时（即解析 consequence 块时），才在遇到 else/elif 时停止
+			shouldStop = true
+		} else if p.curToken.Type == lexer.ESAC {
+			shouldStop = true
+		}
+		if shouldStop {
 			break
 		}
 		// 跳过空白字符和换行（它们是语句分隔符）
@@ -1040,18 +1054,48 @@ func (p *Parser) parseBlockStatementWithStopOnFI(stopOnFI bool) *BlockStatement 
 			p.nextToken()
 			continue
 		}
+		
+		// 检查是否是 if 语句的开始
+		wasIf := false
+		if p.curToken.Type == lexer.IF {
+			ifNestingLevel++
+			wasIf = true
+		}
+		
 		stmtCount++
 		stmt := p.parseStatement()
 		if stmt != nil {
 			block.Statements = append(block.Statements, stmt)
 		}
-		// 如果解析后遇到结束标记，停止解析
-		if p.curToken.Type == lexer.RBRACE ||
-		   (stopOnFI && p.curToken.Type == lexer.FI) ||
-		   p.curToken.Type == lexer.DONE ||
-		   p.curToken.Type == lexer.ELSE ||
-		   p.curToken.Type == lexer.ELIF ||
-		   p.curToken.Type == lexer.ESAC {
+		
+		// 如果刚才解析的是 if 语句，parseIfStatement 会完全解析整个 if 语句（包括 fi），
+		// 所以 curToken 应该在 fi 之后的 token 上，嵌套层级应该减少
+		if wasIf {
+			// parseIfStatement 已经解析完整个 if 语句（包括 fi），
+			// 所以 curToken 现在应该在 fi 之后的 token 上
+			// 嵌套层级应该减少
+			if ifNestingLevel > 0 {
+				ifNestingLevel--
+			}
+		}
+		
+		// 如果解析后遇到结束标记，停止解析（但需要考虑嵌套的 if）
+		// FI: 只有在 stopOnFI 为 true 且 ifNestingLevel == 0 时才停止
+		// ELSE/ELIF: 只有在 ifNestingLevel == 0 且 stopOnFI 为 false 时才停止
+		shouldStop = false
+		if p.curToken.Type == lexer.RBRACE {
+			shouldStop = true
+		} else if stopOnFI && p.curToken.Type == lexer.FI && ifNestingLevel == 0 {
+			shouldStop = true
+		} else if p.curToken.Type == lexer.DONE {
+			shouldStop = true
+		} else if !stopOnFI && ifNestingLevel == 0 && (p.curToken.Type == lexer.ELSE || p.curToken.Type == lexer.ELIF) {
+			// 只有在 stopOnFI 为 false 时（即解析 consequence 块时），才在遇到 else/elif 时停止
+			shouldStop = true
+		} else if p.curToken.Type == lexer.ESAC {
+			shouldStop = true
+		}
+		if shouldStop {
 			break
 		}
 		// 跳过空白字符和换行，准备解析下一个语句
@@ -1059,13 +1103,23 @@ func (p *Parser) parseBlockStatementWithStopOnFI(stopOnFI bool) *BlockStatement 
 		// 所以我们需要跳过它
 		if p.curToken.Type == lexer.WHITESPACE || p.curToken.Type == lexer.NEWLINE {
 			p.nextToken()
-			// 跳过 NEWLINE 后，检查是否是结束标记
-			if p.curToken.Type == lexer.RBRACE ||
-			   (stopOnFI && p.curToken.Type == lexer.FI) ||
-			   p.curToken.Type == lexer.DONE ||
-			   p.curToken.Type == lexer.ELSE ||
-			   p.curToken.Type == lexer.ELIF ||
-			   p.curToken.Type == lexer.ESAC {
+			// 跳过 NEWLINE 后，检查是否是结束标记（但需要考虑嵌套的 if）
+			// FI: 只有在 stopOnFI 为 true 且 ifNestingLevel == 0 时才停止
+			// ELSE/ELIF: 只有在 ifNestingLevel == 0 且 stopOnFI 为 false 时才停止
+			shouldStop = false
+			if p.curToken.Type == lexer.RBRACE {
+				shouldStop = true
+			} else if stopOnFI && p.curToken.Type == lexer.FI && ifNestingLevel == 0 {
+				shouldStop = true
+			} else if p.curToken.Type == lexer.DONE {
+				shouldStop = true
+			} else if !stopOnFI && ifNestingLevel == 0 && (p.curToken.Type == lexer.ELSE || p.curToken.Type == lexer.ELIF) {
+				// 只有在 stopOnFI 为 false 时（即解析 consequence 块时），才在遇到 else/elif 时停止
+				shouldStop = true
+			} else if p.curToken.Type == lexer.ESAC {
+				shouldStop = true
+			}
+			if shouldStop {
 				break
 			}
 			continue

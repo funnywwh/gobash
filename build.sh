@@ -19,26 +19,41 @@ VERSION=""
 
 # 显示帮助信息
 show_help() {
-    cat << EOF
-gobash 构建脚本
-
-用法: $0 [选项]
-
-选项:
-    -p, --platform PLATFORM    目标平台 (linux, darwin, windows)
-    -o, --output DIR            输出目录 (默认: 当前目录)
-    -c, --clean                 构建前清理旧的构建文件
-    -x, --cross                 交叉编译所有平台
-    -v, --version VERSION       设置版本号
-    -h, --help                  显示此帮助信息
-
-示例:
-    $0                          # 构建当前平台
-    $0 -p windows               # 构建 Windows 版本
-    $0 -p linux -o ./dist      # 构建 Linux 版本到 dist 目录
-    $0 -x                       # 交叉编译所有平台
-    $0 -c                       # 清理后构建
-EOF
+    # cat << EOF
+    # gobash 构建脚本
+    # 
+    # 用法: $0 [选项]
+    # 
+    # 选项:
+    #     -p, --platform PLATFORM    目标平台 (linux, darwin, windows)
+    #     -o, --output DIR            输出目录 (默认: 当前目录)
+    #     -c, --clean                 构建前清理旧的构建文件
+    #     -x, --cross                 交叉编译所有平台
+    #     -v, --version VERSION       设置版本号
+    #     -h, --help                  显示此帮助信息
+    # 
+    # 示例:
+    #     $0                          # 构建当前平台
+    #     $0 -p windows               # 构建 Windows 版本
+    #     $0 -p linux -o ./dist      # 构建 Linux 版本到 dist 目录
+    #     $0 -x                       # 交叉编译所有平台
+    #     $0 -c                       # 清理后构建
+    # EOF
+    echo "gobash 构建脚本"
+    echo "用法: $0 [选项]"
+    echo "选项:"
+    echo "    -p, --platform PLATFORM    目标平台 (linux, darwin, windows)"
+    echo "    -o, --output DIR            输出目录 (默认: 当前目录)"
+    echo "    -c, --clean                 构建前清理旧的构建文件"
+    echo "    -x, --cross                 交叉编译所有平台"
+    echo "    -v, --version VERSION       设置版本号"
+    echo "    -h, --help                  显示此帮助信息"
+    echo "示例:"
+    echo "    $0                          # 构建当前平台"
+    echo "    $0 -p windows               # 构建 Windows 版本"
+    echo "    $0 -p linux -o ./dist      # 构建 Linux 版本到 dist 目录"
+    echo "    $0 -x                       # 交叉编译所有平台"
+    echo "    $0 -c                       # 清理后构建"
 }
 
 # 解析命令行参数

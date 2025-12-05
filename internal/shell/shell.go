@@ -310,39 +310,100 @@ func (s *Shell) ExecuteReader(reader io.Reader) error {
 			continue
 		}
 
+		// 检查当前行是否包含 heredoc 标记，如果有则立即跳过内容（在添加到 statement 之前）
+		// 这样可以避免 heredoc 内容被添加到 statement
+		if strings.Contains(originalLine, "<<") {
+			// 提取 heredoc 分隔符
+			delim := extractHeredocDelimiterFromLine(originalLine)
+			if delim != "" {
+				// 先将当前行添加到 statement
+				if currentStatement.Len() > 0 {
+					currentStatement.WriteString("\n")
+					currentStatement.WriteString(originalLine)
+				} else {
+					currentStatement.WriteString(originalLine)
+				}
+
+				// 跳过 heredoc 内容直到找到分隔符
+				foundDelimiter := false
+				for scanner.Scan() {
+					lineNum++
+					contentLine := scanner.Text()
+					// 检查是否是分隔符（需要精确匹配，包括前导空白）
+					trimmedContentLine := strings.TrimSpace(contentLine)
+					if trimmedContentLine == delim {
+						// 找到分隔符，将其添加到 statement（parser 需要它）
+						currentStatement.WriteString("\n")
+						currentStatement.WriteString(contentLine)
+						foundDelimiter = true
+						break
+					}
+					// heredoc 内容不添加到 statement（被跳过）
+				}
+				if !foundDelimiter {
+					// 没有找到分隔符，可能有问题，但继续处理
+				}
+				// 继续到下一轮循环，检查语句是否完成
+				// 注意：这里不需要立即检查语句是否完成，因为 heredoc 可能只是语句的一部分
+				// 让正常的循环流程处理语句完成检查
+				continue
+			}
+		}
+
+		// 在添加当前行之前，先检查当前 statement 中是否有未完成的 heredoc
+		// 如果有，需要先处理 heredoc，避免 heredoc 内容被添加到 statement
+		preStatement := currentStatement.String()
+		if strings.Contains(preStatement, "<<") {
+			// 检查是否有未完成的 heredoc（有 << 但没有对应的分隔符）
+			lines := strings.Split(preStatement, "\n")
+			for _, line := range lines {
+				if strings.Contains(line, "<<") {
+					delim := extractHeredocDelimiterFromLine(line)
+					if delim != "" {
+						// 检查分隔符是否已经在 statement 中
+						foundDelimiter := false
+						for _, checkLine := range lines {
+							if strings.TrimSpace(checkLine) == delim {
+								foundDelimiter = true
+								break
+							}
+						}
+						if !foundDelimiter {
+							// 有未完成的 heredoc，需要跳过内容
+							// 注意：当前行可能就是分隔符，所以先检查当前行
+							if strings.TrimSpace(originalLine) == delim {
+								// 当前行就是分隔符，添加到 statement
+								currentStatement.WriteString("\n")
+								currentStatement.WriteString(originalLine)
+								// 继续到下一轮循环，检查语句是否完成
+								continue
+							}
+							// 否则，跳过 heredoc 内容直到找到分隔符
+							for scanner.Scan() {
+								lineNum++
+								contentLine := scanner.Text()
+								if strings.TrimSpace(contentLine) == delim {
+									// 找到分隔符，将其添加到 statement
+									currentStatement.WriteString("\n")
+									currentStatement.WriteString(contentLine)
+									break
+								}
+								// heredoc 内容不添加到 statement（被跳过）
+							}
+							// 跳过当前行（它是 heredoc 内容的一部分）
+							continue
+						}
+					}
+				}
+			}
+		}
+
 		// 如果有未完成的语句，追加当前行
 		if currentStatement.Len() > 0 {
 			currentStatement.WriteString("\n")
 			currentStatement.WriteString(originalLine)
 		} else {
 			currentStatement.WriteString(originalLine)
-		}
-
-		// 检查当前行是否包含 heredoc 标记，如果有则立即跳过内容
-		if strings.Contains(originalLine, "<<") {
-			// 提取 heredoc 分隔符
-			delim := extractHeredocDelimiterFromLine(originalLine)
-			if delim != "" {
-				// 跳过 heredoc 内容直到找到分隔符
-				heredocContent := ""
-				foundDelimiter := false
-				for scanner.Scan() {
-					lineNum++
-					contentLine := scanner.Text()
-					if strings.TrimSpace(contentLine) == delim {
-						// 找到分隔符
-						foundDelimiter = true
-						break
-					}
-					// heredoc 内容保存（稍后可能需要用于解析）
-					heredocContent += contentLine + "\n"
-				}
-				
-				// heredoc 处理完成，不将内容添加到 statement
-				// 但需要确保 parser 知道 heredoc 结束了
-				_ = heredocContent // heredoc 内容不添加到 statement
-				_ = foundDelimiter
-			}
 		}
 
 		// 检查语句是否完成
@@ -525,7 +586,7 @@ func (s *Shell) isStatementComplete(statement string) bool {
 	quoteChar := byte(0)
 	for i := 0; i < len(statement); i++ {
 		ch := statement[i]
-		
+
 		// 处理转义字符
 		if ch == '\\' && i+1 < len(statement) {
 			if !inQuotes {
@@ -543,7 +604,7 @@ func (s *Shell) isStatementComplete(statement string) bool {
 				continue
 			}
 		}
-		
+
 		// 处理引号
 		if (ch == '"' || ch == '\'') && !inQuotes {
 			inQuotes = true
@@ -552,7 +613,7 @@ func (s *Shell) isStatementComplete(statement string) bool {
 			inQuotes = false
 			quoteChar = 0
 		}
-		
+
 		// 只统计引号外的大括号
 		if !inQuotes {
 			if ch == '{' {
@@ -562,7 +623,7 @@ func (s *Shell) isStatementComplete(statement string) bool {
 			}
 		}
 	}
-	
+
 	// 如果有未闭合的大括号，语句未完成
 	if braceCount > 0 {
 		return false
@@ -578,7 +639,7 @@ func extractHeredocDelimiterFromLine(line string) string {
 	if idx < 0 {
 		return ""
 	}
-	
+
 	// 检查是否是 <<- 或 <<<
 	afterHeredoc := line[idx:]
 	var suffix string
@@ -592,13 +653,13 @@ func extractHeredocDelimiterFromLine(line string) string {
 	} else {
 		return ""
 	}
-	
+
 	// 跳过空白字符
 	suffix = strings.TrimLeft(suffix, " \t")
 	if len(suffix) == 0 {
 		return ""
 	}
-	
+
 	// 检查分隔符是否带引号
 	if suffix[0] == '\'' || suffix[0] == '"' {
 		// 带引号的分隔符
@@ -623,7 +684,7 @@ func extractHeredocDelimiterFromLine(line string) string {
 			return parts[0]
 		}
 	}
-	
+
 	return ""
 }
 

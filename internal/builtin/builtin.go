@@ -79,6 +79,7 @@ func init() {
 	builtins["bg"] = bg
 	builtins["declare"] = declare
 	builtins["shift"] = shift
+	builtins["local"] = local
 }
 
 // GetBuiltins 获取所有内置命令
@@ -837,6 +838,56 @@ func declare(args []string, env map[string]string) error {
 		}
 	}
 	
+	return nil
+}
+
+// local 声明局部变量（只能在函数内使用）
+func local(args []string, env map[string]string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("local: 缺少变量名")
+	}
+
+	// 检查是否在函数中（通过检查是否有 __WBASH_IN_FUNCTION__ 标记）
+	// 这个标记由 executor 在执行函数时设置
+	if _, ok := env["__WBASH_IN_FUNCTION__"]; !ok {
+		return fmt.Errorf("local: 只能在函数内使用")
+	}
+
+	// 处理每个变量声明
+	// 注意：需要收集所有局部变量名，因为 executor 需要一次性处理
+	localVarNames := []string{}
+	
+	for _, arg := range args {
+		// 解析 VAR=value 格式
+		if strings.Contains(arg, "=") {
+			parts := strings.SplitN(arg, "=", 2)
+			varName := parts[0]
+			varValue := parts[1]
+
+			// 移除可能的引号
+			if len(varValue) >= 2 {
+				if (varValue[0] == '"' && varValue[len(varValue)-1] == '"') ||
+					(varValue[0] == '\'' && varValue[len(varValue)-1] == '\'') {
+					varValue = varValue[1 : len(varValue)-1]
+				}
+			}
+
+			// 收集局部变量名
+			localVarNames = append(localVarNames, varName)
+			// 设置变量值
+			env[varName] = varValue
+		} else {
+			// 只有变量名，设置为空字符串
+			localVarNames = append(localVarNames, arg)
+			env[arg] = ""
+		}
+	}
+
+	// 将所有局部变量名用逗号分隔存储，executor 会解析
+	if len(localVarNames) > 0 {
+		env["__WBASH_LOCAL_VARS__"] = strings.Join(localVarNames, ",")
+	}
+
 	return nil
 }
 

@@ -131,6 +131,29 @@ func (l *Lexer) NextToken() Token {
 
 	l.skipWhitespace()
 
+	// 检查是否是注释（# 开头，且不在引号内）
+	// 注意：这里简化处理，假设在 skipWhitespace 后遇到 # 就是注释
+	// 更精确的实现需要跟踪引号状态，但这里先简化
+	// 注意：引号内的 # 会在 readString 中处理，不会到达这里
+	if l.ch == '#' {
+		// 跳过整行注释（直到换行符或EOF）
+		for l.ch != '\n' && l.ch != 0 {
+			l.readChar()
+		}
+		// 如果还有换行符，返回换行符 token
+		if l.ch == '\n' {
+			tok.Line = l.line
+			tok.Column = l.column
+			tok = newToken(NEWLINE, l.ch, tok.Line, tok.Column)
+			l.readChar()
+			return tok
+		}
+		// 否则返回 EOF
+		tok.Line = l.line
+		tok.Column = l.column
+		return Token{Type: EOF, Literal: "", Line: tok.Line, Column: tok.Column}
+	}
+
 	tok.Line = l.line
 	tok.Column = l.column
 

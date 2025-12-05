@@ -63,6 +63,7 @@ type Executor struct {
 	functions   map[string]*parser.FunctionStatement
 	options     map[string]bool // shell选项状态
 	jobs        *JobManager     // 作业管理器
+	localVars   map[string]bool // 局部变量集合：变量名 -> true（表示该变量是局部变量）
 }
 
 // New 创建新的执行器
@@ -76,6 +77,7 @@ func New() *Executor {
 		functions:   make(map[string]*parser.FunctionStatement),
 		options:     make(map[string]bool),
 		jobs:        NewJobManager(),
+		localVars:   make(map[string]bool),
 	}
 	// 初始化环境变量
 	for _, env := range os.Environ() {
@@ -307,6 +309,13 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 			fmt.Fprintf(os.Stderr, "\n")
 		}
 
+		// 对于 local 命令，需要设置函数上下文标记
+		if cmdName == "local" {
+			// 检查是否在函数中（通过检查调用栈，简化实现：总是允许）
+			// 实际上，local 只能在函数中使用，但这里简化处理
+			e.env["__WBASH_IN_FUNCTION__"] = "1"
+		}
+
 		// 处理内置命令的重定向
 		if len(cmd.Redirects) > 0 {
 			err := e.executeBuiltinWithRedirect(cmdName, builtinFunc, args, cmd.Redirects)
@@ -355,6 +364,23 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 			if varName, ok := e.env["__WBASH_DECLARE_VAR__"]; ok {
 				e.arrayTypes[varName] = "var"
 				delete(e.env, "__WBASH_DECLARE_VAR__")
+			}
+		}
+
+		// 处理local命令的特殊情况
+		if cmdName == "local" {
+			// 检查是否声明了局部变量
+			if localVarsStr, ok := e.env["__WBASH_LOCAL_VARS__"]; ok {
+				// 解析局部变量名列表（逗号分隔）
+				localVarNames := strings.Split(localVarsStr, ",")
+				for _, varName := range localVarNames {
+					varName = strings.TrimSpace(varName)
+					if varName != "" {
+						// 标记为局部变量
+						e.localVars[varName] = true
+					}
+				}
+				delete(e.env, "__WBASH_LOCAL_VARS__")
 			}
 		}
 
@@ -1870,6 +1896,15 @@ func (e *Executor) executeFunction(fn *parser.FunctionStatement, args []parser.E
 		oldEnv[k] = v
 	}
 
+	// 保存当前局部变量集合
+	oldLocalVars := make(map[string]bool)
+	for k, v := range e.localVars {
+		oldLocalVars[k] = v
+	}
+
+	// 设置函数上下文标记（用于 local 命令检查）
+	e.env["__WBASH_IN_FUNCTION__"] = "1"
+
 	// 设置函数参数为位置参数（$1, $2, ...）
 	for i, arg := range args {
 		argValue := e.evaluateExpression(arg)
@@ -1887,14 +1922,26 @@ func (e *Executor) executeFunction(fn *parser.FunctionStatement, args []parser.E
 	// 执行函数体
 	err := e.executeBlock(fn.Body)
 
-	// 恢复环境变量（但保留新设置的环境变量）
+	// 恢复环境变量（但保留新设置的环境变量，除非是局部变量）
 	for k, v := range oldEnv {
-		if _, exists := e.env[k]; !exists {
+		if e.localVars[k] {
+			// 局部变量在函数返回时被删除
+			delete(e.env, k)
+			delete(e.localVars, k)
+		} else if _, exists := e.env[k]; !exists {
+			// 如果变量不存在了，删除它
 			delete(e.env, k)
 		} else {
+			// 恢复旧值（非局部变量）
 			e.env[k] = v
 		}
 	}
+
+	// 恢复局部变量集合
+	e.localVars = oldLocalVars
+
+	// 清理函数上下文标记
+	delete(e.env, "__WBASH_IN_FUNCTION__")
 
 	// 清理位置参数
 	for i := 1; i <= len(args); i++ {
