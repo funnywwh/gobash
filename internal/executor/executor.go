@@ -344,20 +344,49 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 		if e.stdoutWriter != nil {
 			// 如果是 *os.File，直接修改 os.Stdout（为了兼容外部命令）
 			if f, ok := e.stdoutWriter.(*os.File); ok {
-				oldStdout := os.Stdout
-				os.Stdout = f
-				defer func() {
-					os.Stdout = oldStdout
-				}()
+				// 关键修复：如果 os.Stdout 已经是这个文件，不需要再次设置
+				// 这样可以避免在命令替换中过早恢复 os.Stdout
+				if os.Stdout != f {
+					oldStdout := os.Stdout
+					os.Stdout = f
+					defer func() {
+						os.Stdout = oldStdout
+					}()
+				}
 			} else {
 				// 如果是 bytes.Buffer 或其他 io.Writer
-				// 在命令替换中，os.Stdout 已经被设置为管道，会最终写入到 bytes.Buffer
-				// 但是，为了确保输出被正确捕获，我们需要确保 os.Stdout 指向管道
-				// 实际上，在 executeCommandSubstitution 中已经设置了 os.Stdout = w
-				// 所以这里不需要额外处理，fmt.Println 会写入到管道
+				// 关键修复：在命令替换中，让内置命令直接写入到 stdoutWriter
+				// 方法：使用 fmt.Fprintf 直接写入到 stdoutWriter，而不是通过 os.Stdout
+				// 但是，内置命令（如 echo）使用 fmt.Println，它只能写入到 os.Stdout
+				// 所以我们需要在 executeBuiltinCommand 中处理这种情况
 				// 
-				// 关键：在命令替换中，os.Stdout 已经被设置为管道，fmt.Println 会写入到管道
+				// 实际上，在命令替换中，os.Stdout 已经被设置为管道
+				// 但是，为了确保内置命令的输出被正确捕获，我们需要让内置命令直接写入到 stdoutWriter
+				// 
+				// 关键：在命令替换中，os.Stdout 已经被设置为管道，会最终写入到 bytes.Buffer
+				// 但是 fmt.Println 使用了内部缓冲，可能不会被正确捕获
+				// 所以我们需要确保在命令执行后，所有缓冲都被刷新
+				// 这已经在 executeCommandSubstitution 中通过关闭管道来实现
+				// 
+				// 但是，更好的方法是：让内置命令直接写入到 stdoutWriter
+				// 我们可以通过设置 os.Stdout 为一个包装器来实现
+				// 但是，fmt.Println 只能写入到 os.Stdout，所以我们需要设置 os.Stdout
+				// 
+				// 实际上，在命令替换中，os.Stdout 已经被设置为管道
+				// 所以这里不需要额外处理，fmt.Println 会写入到管道
 				// 然后被读取 goroutine 读取并写入到 bytes.Buffer
+				// 
+				// 关键修复：在命令替换中，os.Stdout 已经被设置为管道
+				// 但是 fmt.Println 使用了内部缓冲，可能不会被正确捕获
+				// 所以我们需要确保在命令执行后，所有缓冲都被刷新
+				// 这已经在 executeCommandSubstitution 中通过关闭管道来实现
+				// 
+				// 实际上，在命令替换中，os.Stdout 已经被设置为管道
+				// 所以这里不需要额外处理，fmt.Println 会写入到管道
+				// 然后被读取 goroutine 读取并写入到 bytes.Buffer
+				// 
+				// 但是，问题在于 fmt.Println 的缓冲可能没有被正确刷新
+				// 所以我们需要在 executeCommandSubstitution 中确保缓冲被刷新
 			}
 		}
 
@@ -1871,9 +1900,23 @@ func (e *Executor) expandVariablesInString(s string) string {
 			} else if i+1 < len(s) && (isLetter(s[i+1]) || s[i+1] == '_') {
 				// $VAR 格式，可能包含数组访问 $arr[0]
 				i++
-				for i < len(s) && (isLetter(s[i]) || isDigit(s[i]) || s[i] == '_' || s[i] == '[' || s[i] == ']') {
+				// 关键修复：只在变量名后跟 [ 时才包含 [ 和 ]
+				// 否则，只提取变量名部分（字母、数字、下划线）
+				for i < len(s) && (isLetter(s[i]) || isDigit(s[i]) || s[i] == '_') {
 					varName.WriteByte(s[i])
 					i++
+				}
+				// 检查是否是数组访问
+				if i < len(s) && s[i] == '[' {
+					// 有数组访问，包含 [ 和 ]
+					for i < len(s) && s[i] != ']' {
+						varName.WriteByte(s[i])
+						i++
+					}
+					if i < len(s) && s[i] == ']' {
+						varName.WriteByte(s[i])
+						i++
+					}
 				}
 				varNameStr := varName.String()
 				// 检查是否是数组访问
@@ -2012,15 +2055,6 @@ func (e *Executor) executeFunction(fn *parser.FunctionStatement, args []parser.E
 // executeCommandSubstitution 执行命令替换
 // 正确处理嵌套的命令替换、转义和退出码
 func (e *Executor) executeCommandSubstitution(command string) string {
-	// 调试输出：检查函数是否被调用（使用临时文件，避免 stderr 被重定向）
-	// 注意：临时文件保留在 /tmp 目录，手动删除
-	tmpFile, _ := os.CreateTemp("/tmp", "gobash_debug_*")
-	if tmpFile != nil {
-		fmt.Fprintf(tmpFile, "[DEBUG] executeCommandSubstitution called: command=%q\n", command)
-		tmpFile.Close()
-		// 不立即删除，保留以便检查
-	}
-	
 	// 先展开命令字符串中的变量和嵌套的命令替换
 	// 注意：命令替换中的命令本身不应该进行单词分割和路径名展开
 	expandedCommand := e.expandCommandSubstitutionCommand(command)
@@ -2055,89 +2089,41 @@ func (e *Executor) executeCommandSubstitution(command string) string {
 	for k, v := range e.options {
 		subExecutor.options[k] = v
 	}
-	// 设置子shell的 stdoutWriter 为 bytes.Buffer
-	// 注意：如果当前 Executor 已经有 stdoutWriter，嵌套的命令替换应该使用同一个 writer
-	if e.stdoutWriter != nil {
-		subExecutor.stdoutWriter = e.stdoutWriter
-	} else {
-		subExecutor.stdoutWriter = &output
-	}
-	
-	// 对于外部命令，需要设置 os.Stdout
-	// 创建一个管道，将 os.Stdout 的输出写入到 bytes.Buffer
-	// 这样可以同时支持内置命令（通过 stdoutWriter）和外部命令（通过 os.Stdout）
-	r, w, err := os.Pipe()
+	// 关键修复：使用临时文件代替管道来捕获输出
+	// 这样可以避免管道和缓冲的问题
+	// 创建临时文件
+	tmpFile, err := os.CreateTemp("", "gobash_cmd_subst_*")
 	if err != nil {
 		return ""
 	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath) // 确保删除临时文件
 	
-	// 在 goroutine 中读取并写入到 bytes.Buffer
-	// 注意：必须在设置 os.Stdout 之前启动读取 goroutine，避免管道缓冲区满导致阻塞
-	done := make(chan bool, 1)
-	readReady := make(chan bool, 1)
-	go func() {
-		readReady <- true // 通知读取 goroutine 已准备好
-		n, err := io.Copy(&output, r)
-		r.Close()
-		// 使用临时文件输出调试信息，避免 stderr 被重定向
-		tmpFile, _ := os.CreateTemp("/tmp", "gobash_read_debug_*")
-		if tmpFile != nil {
-			fmt.Fprintf(tmpFile, "[DEBUG] executeCommandSubstitution: read goroutine done, n=%d, err=%v, outputLen=%d, output=%q\n", n, err, output.Len(), output.String())
-			tmpFile.Close()
-		}
-		done <- true
-	}()
-	
-	// 等待读取 goroutine 准备好
-	<-readReady
+	// 关键：设置 subExecutor.stdoutWriter 为临时文件
+	// 这样在 executeBuiltinCommand 中，stdoutWriter 会被正确处理
+	subExecutor.stdoutWriter = tmpFile
 	
 	// 保存当前的标准输出
 	oldStdout := os.Stdout
-	// 设置标准输出到管道（用于外部命令）
-	os.Stdout = w
-	// 使用 defer 确保 os.Stdout 总是被恢复，即使发生 panic
-	defer func() {
-		// 恢复标准输出
-		os.Stdout = oldStdout
-	}()
+	// 设置标准输出到临时文件
+	os.Stdout = tmpFile
 	
 	// 执行命令
 	execErr := subExecutor.Execute(program)
 	
-	// 关键问题：fmt.Println 在 Go 中使用了全局的 os.Stdout 变量
-	// 当我们设置 os.Stdout = w 时，fmt.Println 应该会写入到管道
-	// 但是，fmt.Println 可能使用了内部的缓冲器（通过 bufio.Writer）
-	// 这个缓冲器可能在恢复 os.Stdout 之后才被刷新，导致输出写入到错误的位置
-	// 
-	// 解决方案：在恢复 os.Stdout 之前，必须确保所有缓冲的数据都被刷新
-	// 关闭写入端会刷新所有缓冲的数据，并通知读取端 EOF
-	// 但是，fmt 包使用了内部的缓冲器，这个缓冲器可能还没有被刷新
-	// 
-	// 关键修复：在关闭管道之前，等待一小段时间，确保 fmt 包的缓冲器被刷新
-	// 这样可以确保所有数据都被写入到管道
-	// 注意：需要等待足够长的时间，确保缓冲器被刷新
-	time.Sleep(50 * time.Millisecond)
-	// 关闭写入端会刷新所有缓冲的数据，并通知读取端 EOF
-	w.Close()
-	// 等待读取完成（设置超时，避免死锁）
-	select {
-	case <-done:
-		// 读取完成
-		// 使用临时文件输出调试信息，避免 stderr 被重定向
-		tmpFile, _ := os.CreateTemp("/tmp", "gobash_done_debug_*")
-		if tmpFile != nil {
-			fmt.Fprintf(tmpFile, "[DEBUG] executeCommandSubstitution: read done, outputLen=%d, output=%q\n", output.Len(), output.String())
-			tmpFile.Close()
+	// 关键修复：在恢复 os.Stdout 之前，先同步并关闭临时文件
+	// 这样可以确保 fmt.Println 的缓冲被刷新到文件
+	tmpFile.Sync() // 同步文件，确保所有缓冲都被写入
+	tmpFile.Close()
+	// 恢复标准输出
+	os.Stdout = oldStdout
+	
+	// 读取临时文件的内容
+	if execErr == nil {
+		data, err := os.ReadFile(tmpPath)
+		if err == nil {
+			output.Write(data)
 		}
-	case <-time.After(5 * time.Second):
-		// 超时，可能读取卡住了
-		// 使用临时文件输出调试信息，避免 stderr 被重定向
-		tmpFile, _ := os.CreateTemp("/tmp", "gobash_timeout_debug_*")
-		if tmpFile != nil {
-			fmt.Fprintf(tmpFile, "[DEBUG] executeCommandSubstitution: read timeout, outputLen=%d, output=%q\n", output.Len(), output.String())
-			tmpFile.Close()
-		}
-		return ""
 	}
 
 	// 恢复退出码（命令替换不应该改变当前shell的退出码，除非命令替换本身失败）
