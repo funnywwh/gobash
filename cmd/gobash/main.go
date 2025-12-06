@@ -52,8 +52,10 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1][0] != '-' {
 		// 收集所有脚本文件（支持通配符和多个文件）
 		var scriptFiles []string
+		var scriptArgs []string
+		argsStartIndex := -1
 		
-		// 遍历所有非选项参数
+		// 遍历所有非选项参数，区分脚本文件和脚本参数
 		for i := 1; i < len(os.Args); i++ {
 			arg := os.Args[i]
 			
@@ -66,13 +68,27 @@ func main() {
 					os.Exit(1)
 				}
 				if len(matches) == 0 {
-					fmt.Fprintf(os.Stderr, "警告: 没有找到匹配的文件: %s\n", arg)
+					// 通配符没有匹配到文件，可能是脚本参数
+					if argsStartIndex == -1 {
+						argsStartIndex = i
+					}
+					scriptArgs = append(scriptArgs, arg)
 					continue
 				}
 				scriptFiles = append(scriptFiles, matches...)
 			} else {
-				// 普通文件路径
-				scriptFiles = append(scriptFiles, arg)
+				// 检查是否是实际存在的文件
+				info, err := os.Stat(arg)
+				if err == nil && !info.IsDir() {
+					// 是文件，添加到脚本文件列表
+					scriptFiles = append(scriptFiles, arg)
+				} else {
+					// 不是文件或不存在，作为脚本参数
+					if argsStartIndex == -1 {
+						argsStartIndex = i
+					}
+					scriptArgs = append(scriptArgs, arg)
+				}
 			}
 		}
 		
@@ -130,11 +146,16 @@ func main() {
 				fmt.Println(separator)
 			}
 			
-			// 执行脚本（不带额外参数，因为所有参数都被视为脚本文件）
+			// 执行脚本，传递脚本参数（只有第一个脚本接收参数）
 			// 使用 goroutine 来执行脚本，避免卡死
 			scriptErr := make(chan error, 1)
 			go func() {
-				scriptErr <- sh.ExecuteScript(scriptPath)
+				// 只有第一个脚本接收参数
+				if i == 0 {
+					scriptErr <- sh.ExecuteScript(scriptPath, scriptArgs...)
+				} else {
+					scriptErr <- sh.ExecuteScript(scriptPath)
+				}
 			}()
 			
 			// 设置超时（300秒），如果脚本卡死则跳过
