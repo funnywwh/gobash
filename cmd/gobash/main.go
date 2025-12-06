@@ -137,7 +137,7 @@ func main() {
 				scriptErr <- sh.ExecuteScript(scriptPath)
 			}()
 			
-			// 设置超时（5秒），如果脚本卡死则跳过
+			// 设置超时（300秒），如果脚本卡死则跳过
 			select {
 			case err := <-scriptErr:
 				if err != nil {
@@ -159,8 +159,8 @@ func main() {
 						hasError = true
 					}
 				}
-			case <-time.After(5 * time.Second):
-				fmt.Fprintf(os.Stderr, "警告: 脚本 %s 执行超时（5秒），跳过\n", scriptPath)
+			case <-time.After(300 * time.Second):
+				fmt.Fprintf(os.Stderr, "警告: 脚本 %s 执行超时（300秒），跳过\n", scriptPath)
 				hasError = true
 				// 注意：goroutine 可能仍在运行，但我们已经继续执行下一个脚本了
 			}

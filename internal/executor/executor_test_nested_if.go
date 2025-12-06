@@ -287,3 +287,5 @@ func TestNestedIfWithCommands(t *testing.T) {
 				t.Errorf("输出不匹配，期望: %q, 得到: %q", tt.expected, output)
 			}
 		})
+	}
+}

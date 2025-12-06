@@ -3,6 +3,7 @@ package executor
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"gobash/internal/builtin"
@@ -64,6 +65,7 @@ type Executor struct {
 	options     map[string]bool // shell选项状态
 	jobs        *JobManager     // 作业管理器
 	localVars   map[string]bool // 局部变量集合：变量名 -> true（表示该变量是局部变量）
+	stdoutWriter io.Writer       // 标准输出写入器（用于命令替换等场景）
 }
 
 // New 创建新的执行器
@@ -78,6 +80,7 @@ func New() *Executor {
 		options:     make(map[string]bool),
 		jobs:        NewJobManager(),
 		localVars:   make(map[string]bool),
+		stdoutWriter: os.Stdout, // 默认使用标准输出
 	}
 	// 初始化环境变量
 	for _, env := range os.Environ() {
@@ -334,6 +337,28 @@ func (e *Executor) executeCommand(cmd *parser.CommandStatement) error {
 		// 为需要访问JobManager的命令设置引用
 		if cmdName == "jobs" || cmdName == "fg" || cmdName == "bg" {
 			builtin.SetJobManager(e.jobs)
+		}
+
+		// 如果设置了自定义 stdout writer，使用 fmt.Fprintln 直接写入
+		// 这样可以支持 bytes.Buffer 和其他 io.Writer 类型
+		if e.stdoutWriter != nil {
+			// 如果是 *os.File，直接修改 os.Stdout（为了兼容外部命令）
+			if f, ok := e.stdoutWriter.(*os.File); ok {
+				oldStdout := os.Stdout
+				os.Stdout = f
+				defer func() {
+					os.Stdout = oldStdout
+				}()
+			} else {
+				// 如果是 bytes.Buffer 或其他 io.Writer
+				// 在命令替换中，os.Stdout 已经被设置为管道，会最终写入到 bytes.Buffer
+				// 但是，为了确保输出被正确捕获，我们需要确保 os.Stdout 指向管道
+				// 实际上，在 executeCommandSubstitution 中已经设置了 os.Stdout = w
+				// 所以这里不需要额外处理，fmt.Println 会写入到管道
+				// 
+				// 关键：在命令替换中，os.Stdout 已经被设置为管道，fmt.Println 会写入到管道
+				// 然后被读取 goroutine 读取并写入到 bytes.Buffer
+			}
 		}
 
 		if err := builtinFunc(args, e.env); err != nil {
@@ -1705,6 +1730,37 @@ func (e *Executor) expandVariablesInString(s string) string {
 				continue
 			}
 
+			// 检查是否是命令替换 $(...)
+			if i+1 < len(s) && s[i+1] == '(' {
+				// $(...) 格式
+				i += 2 // 跳过 $(
+				startPos := i
+				parenDepth := 0
+				for i < len(s) {
+					if s[i] == '(' {
+						parenDepth++
+						i++
+					} else if s[i] == ')' {
+						if parenDepth > 0 {
+							// 这个 ) 匹配一个普通的 (
+							parenDepth--
+							i++
+						} else {
+							// parenDepth == 0，这是命令替换的结束 )
+							// 提取命令
+							command := s[startPos:i]
+							// 执行命令替换
+							result.WriteString(e.executeCommandSubstitution(command))
+							i++ // 跳过 )
+							break
+						}
+					} else {
+						i++
+					}
+				}
+				continue
+			}
+
 			// 正常展开变量
 			// 处理变量展开
 			var varName strings.Builder
@@ -1956,6 +2012,15 @@ func (e *Executor) executeFunction(fn *parser.FunctionStatement, args []parser.E
 // executeCommandSubstitution 执行命令替换
 // 正确处理嵌套的命令替换、转义和退出码
 func (e *Executor) executeCommandSubstitution(command string) string {
+	// 调试输出：检查函数是否被调用（使用临时文件，避免 stderr 被重定向）
+	// 注意：临时文件保留在 /tmp 目录，手动删除
+	tmpFile, _ := os.CreateTemp("/tmp", "gobash_debug_*")
+	if tmpFile != nil {
+		fmt.Fprintf(tmpFile, "[DEBUG] executeCommandSubstitution called: command=%q\n", command)
+		tmpFile.Close()
+		// 不立即删除，保留以便检查
+	}
+	
 	// 先展开命令字符串中的变量和嵌套的命令替换
 	// 注意：命令替换中的命令本身不应该进行单词分割和路径名展开
 	expandedCommand := e.expandCommandSubstitutionCommand(command)
@@ -1970,49 +2035,110 @@ func (e *Executor) executeCommandSubstitution(command string) string {
 		return ""
 	}
 
-	// 保存当前的标准输出
-	oldStdout := os.Stdout
+	// 使用 bytes.Buffer 直接捕获输出，而不是管道
+	// 这样可以避免管道的同步问题和 fmt.Println 的缓冲问题
+	var output bytes.Buffer
 
-	// 创建管道捕获输出
+	// 执行命令（在子shell环境中）
+	// 注意：命令替换在子shell中执行，不应该影响当前shell的状态
+	// 创建新的 Executor 实例来执行命令替换，避免递归调用时的状态干扰
+	subExecutor := New()
+	// 复制当前环境变量到子shell
+	for k, v := range e.env {
+		subExecutor.env[k] = v
+	}
+	// 复制函数定义到子shell
+	for k, v := range e.functions {
+		subExecutor.functions[k] = v
+	}
+	// 复制选项到子shell
+	for k, v := range e.options {
+		subExecutor.options[k] = v
+	}
+	// 设置子shell的 stdoutWriter 为 bytes.Buffer
+	// 注意：如果当前 Executor 已经有 stdoutWriter，嵌套的命令替换应该使用同一个 writer
+	if e.stdoutWriter != nil {
+		subExecutor.stdoutWriter = e.stdoutWriter
+	} else {
+		subExecutor.stdoutWriter = &output
+	}
+	
+	// 对于外部命令，需要设置 os.Stdout
+	// 创建一个管道，将 os.Stdout 的输出写入到 bytes.Buffer
+	// 这样可以同时支持内置命令（通过 stdoutWriter）和外部命令（通过 os.Stdout）
 	r, w, err := os.Pipe()
 	if err != nil {
 		return ""
 	}
-	os.Stdout = w
-
-	// 在goroutine中读取输出，避免阻塞
-	done := make(chan bool)
-	var output strings.Builder
-
+	
+	// 在 goroutine 中读取并写入到 bytes.Buffer
+	// 注意：必须在设置 os.Stdout 之前启动读取 goroutine，避免管道缓冲区满导致阻塞
+	done := make(chan bool, 1)
+	readReady := make(chan bool, 1)
 	go func() {
-		// 读取输出
-		buf := make([]byte, 1024)
-		for {
-			n, readErr := r.Read(buf)
-			if n > 0 {
-				output.Write(buf[:n])
-			}
-			if readErr == io.EOF {
-				break
-			}
-			if readErr != nil {
-				break
-			}
-		}
+		readReady <- true // 通知读取 goroutine 已准备好
+		n, err := io.Copy(&output, r)
 		r.Close()
+		// 使用临时文件输出调试信息，避免 stderr 被重定向
+		tmpFile, _ := os.CreateTemp("/tmp", "gobash_read_debug_*")
+		if tmpFile != nil {
+			fmt.Fprintf(tmpFile, "[DEBUG] executeCommandSubstitution: read goroutine done, n=%d, err=%v, outputLen=%d, output=%q\n", n, err, output.Len(), output.String())
+			tmpFile.Close()
+		}
 		done <- true
 	}()
-
-	// 执行命令（在子shell环境中）
-	// 注意：命令替换在子shell中执行，不应该影响当前shell的状态
-	execErr := e.Execute(program)
-
-	// 恢复标准输出
+	
+	// 等待读取 goroutine 准备好
+	<-readReady
+	
+	// 保存当前的标准输出
+	oldStdout := os.Stdout
+	// 设置标准输出到管道（用于外部命令）
+	os.Stdout = w
+	// 使用 defer 确保 os.Stdout 总是被恢复，即使发生 panic
+	defer func() {
+		// 恢复标准输出
+		os.Stdout = oldStdout
+	}()
+	
+	// 执行命令
+	execErr := subExecutor.Execute(program)
+	
+	// 关键问题：fmt.Println 在 Go 中使用了全局的 os.Stdout 变量
+	// 当我们设置 os.Stdout = w 时，fmt.Println 应该会写入到管道
+	// 但是，fmt.Println 可能使用了内部的缓冲器（通过 bufio.Writer）
+	// 这个缓冲器可能在恢复 os.Stdout 之后才被刷新，导致输出写入到错误的位置
+	// 
+	// 解决方案：在恢复 os.Stdout 之前，必须确保所有缓冲的数据都被刷新
+	// 关闭写入端会刷新所有缓冲的数据，并通知读取端 EOF
+	// 但是，fmt 包使用了内部的缓冲器，这个缓冲器可能还没有被刷新
+	// 
+	// 关键修复：在关闭管道之前，等待一小段时间，确保 fmt 包的缓冲器被刷新
+	// 这样可以确保所有数据都被写入到管道
+	// 注意：需要等待足够长的时间，确保缓冲器被刷新
+	time.Sleep(50 * time.Millisecond)
+	// 关闭写入端会刷新所有缓冲的数据，并通知读取端 EOF
 	w.Close()
-	os.Stdout = oldStdout
-
-	// 等待读取完成
-	<-done
+	// 等待读取完成（设置超时，避免死锁）
+	select {
+	case <-done:
+		// 读取完成
+		// 使用临时文件输出调试信息，避免 stderr 被重定向
+		tmpFile, _ := os.CreateTemp("/tmp", "gobash_done_debug_*")
+		if tmpFile != nil {
+			fmt.Fprintf(tmpFile, "[DEBUG] executeCommandSubstitution: read done, outputLen=%d, output=%q\n", output.Len(), output.String())
+			tmpFile.Close()
+		}
+	case <-time.After(5 * time.Second):
+		// 超时，可能读取卡住了
+		// 使用临时文件输出调试信息，避免 stderr 被重定向
+		tmpFile, _ := os.CreateTemp("/tmp", "gobash_timeout_debug_*")
+		if tmpFile != nil {
+			fmt.Fprintf(tmpFile, "[DEBUG] executeCommandSubstitution: read timeout, outputLen=%d, output=%q\n", output.Len(), output.String())
+			tmpFile.Close()
+		}
+		return ""
+	}
 
 	// 恢复退出码（命令替换不应该改变当前shell的退出码，除非命令替换本身失败）
 	// 但我们需要保存命令替换的退出码，以便在需要时使用
@@ -2025,7 +2151,11 @@ func (e *Executor) executeCommandSubstitution(command string) string {
 	}
 
 	// 返回输出（移除末尾的换行符，如果存在）
+	// 注意：output 是 bytes.Buffer，通过管道从 os.Stdout 读取的数据会写入到这里
 	result := output.String()
+	
+	// 移除末尾的换行符（如果存在）
+	// 注意：命令替换的输出通常不包含末尾的换行符，但为了兼容性，我们移除它
 	if len(result) > 0 && result[len(result)-1] == '\n' {
 		result = result[:len(result)-1]
 	}

@@ -80,6 +80,7 @@ func init() {
 	builtins["declare"] = declare
 	builtins["shift"] = shift
 	builtins["local"] = local
+	builtins["command"] = command
 }
 
 // GetBuiltins 获取所有内置命令

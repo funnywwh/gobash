@@ -538,47 +538,7 @@ func (s *Shell) isStatementComplete(statement string) bool {
 		}
 	}
 
-	// 检查case语句
-	if caseCount > esacCount {
-		return false
-	}
-
-	// 检查if语句
-	if ifCount > fiCount {
-		return false
-	}
-
-	// 检查for/while语句
-	// 注意：while循环需要do关键字，所以如果whileCount > 0但没有done，且没有do，语句未完成
-	if (forCount + whileCount) > doneCount {
-		// 检查是否有do关键字（while循环需要do）
-		// 使用更精确的匹配：do必须是独立的单词
-		doCount := 0
-		// 检查 " do "、" do\n"、";do "、";do\n"、"\ndo "、"\ndo\n" 等
-		doPatterns := []string{" do ", " do\n", ";do ", ";do\n", "\ndo ", "\ndo\n", " do;", "\ndo;"}
-		for _, pattern := range doPatterns {
-			doCount += strings.Count(statement, pattern)
-		}
-		// 也检查行首的do（do在行首）
-		if strings.HasPrefix(strings.TrimSpace(statement), "do ") ||
-			strings.HasPrefix(strings.TrimSpace(statement), "do\n") {
-			doCount++
-		}
-		// 如果while循环没有do关键字，语句未完成
-		if whileCount > 0 && doCount == 0 && doneCount == 0 {
-			return false
-		}
-		// 如果while循环有do但没有done，语句未完成
-		if whileCount > 0 && doCount > 0 && doneCount == 0 {
-			return false
-		}
-		// 如果for循环没有done，语句未完成
-		if forCount > 0 && doneCount == 0 {
-			return false
-		}
-	}
-
-	// 检查函数定义 name() { ... }
+	// 先检查函数定义的大括号（最外层结构）
 	// 函数定义格式：name() { ... } 或 function name() { ... }
 	// 需要检查是否有未闭合的大括号
 	braceCount := 0
@@ -624,9 +584,50 @@ func (s *Shell) isStatementComplete(statement string) bool {
 		}
 	}
 
-	// 如果有未闭合的大括号，语句未完成
+	// 如果有未闭合的大括号，语句未完成（函数定义未完成）
 	if braceCount > 0 {
 		return false
+	}
+
+	// 如果大括号已闭合，检查内部的语句是否完整
+	// 检查case语句
+	if caseCount > esacCount {
+		return false
+	}
+
+	// 检查if语句
+	if ifCount > fiCount {
+		return false
+	}
+
+	// 检查for/while语句
+	// 注意：while循环需要do关键字，所以如果whileCount > 0但没有done，且没有do，语句未完成
+	if (forCount + whileCount) > doneCount {
+		// 检查是否有do关键字（while循环需要do）
+		// 使用更精确的匹配：do必须是独立的单词
+		doCount := 0
+		// 检查 " do "、" do\n"、";do "、";do\n"、"\ndo "、"\ndo\n" 等
+		doPatterns := []string{" do ", " do\n", ";do ", ";do\n", "\ndo ", "\ndo\n", " do;", "\ndo;"}
+		for _, pattern := range doPatterns {
+			doCount += strings.Count(statement, pattern)
+		}
+		// 也检查行首的do（do在行首）
+		if strings.HasPrefix(strings.TrimSpace(statement), "do ") ||
+			strings.HasPrefix(strings.TrimSpace(statement), "do\n") {
+			doCount++
+		}
+		// 如果while循环没有do关键字，语句未完成
+		if whileCount > 0 && doCount == 0 && doneCount == 0 {
+			return false
+		}
+		// 如果while循环有do但没有done，语句未完成
+		if whileCount > 0 && doCount > 0 && doneCount == 0 {
+			return false
+		}
+		// 如果for循环没有done，语句未完成
+		if forCount > 0 && doneCount == 0 {
+			return false
+		}
 	}
 
 	return true
